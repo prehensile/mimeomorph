@@ -1,0 +1,40 @@
+<html>
+<head>
+</head>
+<body>
+	<form>
+		<fieldset id="fieldset_1">
+			<legend>Twitter account</legend>
+			{{twitter_username}}
+			<input type="button" value="{{twitter_prompt}}" />
+		</fieldset>
+		<fieldset id="fieldset_2">
+			<legend>Absorption rate</legend>
+			<input type="radio" name="learnfrom" value="oneuser"/>
+			Learn from one user
+			<input style="display:none" type="text" name="guru" maxlength="20" value="Name of my guru"/>
+			<input type="radio" name="learnfrom" value="followers"/>
+			Learn from my followers
+			<input type="radio" name="learnfrom" value="followed"/>
+			Learn from everyone I follow
+			<input type="radio" name="learnfrom" value="list"/>
+			Learn from a list
+		</fieldset>
+		<fieldset id="fieldset_2">
+			<legend>Locquacity</legend>
+			<input type="radio" name="locquacity" value="onschedule"/>
+			Tweet on schedule
+			<fieldset id="schedule_settings" style="display:none">
+				<input type="text" name="frequency" size="2" value="{{tweet_frequency}}"/>
+				<select name="frequency_unit">
+					<option value="hrs" {{frequency_hrs_selected}}>hours</option>
+					<option value="mins" {{frequency_mins_selected}}>minutes</option>
+				</select>
+			</fieldset>
+			<input type="radio" name="locquacity" value="replyonly"/>
+			Speak only when spoken to
+		</fieldset>
+		<input type="submit" value="Save" />
+	</form>
+</body>
+</html>
