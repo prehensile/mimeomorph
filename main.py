@@ -17,81 +17,63 @@
 from google.appengine.ext import webapp
 from google.appengine.ext.webapp import util
 import tweepy
+import twitter
 import logging
 import config
-from gaesessions import delete_expired_sessions
-from gaesessions import get_current_session
 import datastore
+import brains
+from google.appengine.ext.webapp import template
+import constants
+import os
+
+def get_url( request, path ):
+	callback_url = request.url
+	callback_url = callback_url[:callback_url.rfind("/")]
+	callback_url += path
+	return callback_url
 
 class MainHandler(webapp.RequestHandler):
     def get(self):
         self.response.out.write('Hello world!')
 
-REQUEST_TOKEN_KEY = "request_token"
-
 class AuthHandler( webapp.RequestHandler ):
-	
 	def get(self):
 		
-		callback_url = self.request.url
-		callback_url = callback_url[:callback_url.rfind("/")]
-		callback_url += "/oauth_return"
-		logging.debug( callback_url )
-
-		# cooked up from http://packages.python.org/tweepy/html/auth_tutorial.html
-		# and https://github.com/dound/gae-sessions/blob/master/README.markdown
-
-		auth = tweepy.OAuthHandler( config.consumer_key, config.consumer_secret, callback_url )
+		callback_url = get_url( self.request, "/oauth_return" )
 		redirect_url = None
 		tw_error = None
+
 		try:
-			redirect_url = auth.get_authorization_url()
+			redirect_url = twitter.get_authurl( callback_url )
 		except tweepy.TweepError as err:
 			tw_error = err
 		
-		session = get_current_session()
-		session[ REQUEST_TOKEN_KEY ] = (auth.request_token.key, auth.request_token.secret)
-
 		if redirect_url:
 			self.response.out.write( "Redirecting to twitter for authorisation..." )
 			self.redirect( redirect_url )
 		else:
-			self.response.out.write( "Error! Failed to get request token." )	
+			self.response.out.write( "Error! Failed to get request token.\not" )
+			self.response.out.write( tw_error )	
 
 
 class AuthReturnHandler( webapp.RequestHandler ):
-
 	def get(self):
-
-		self.response.out.write( "Returned from auth!<br/>" )
-
-		# cooked up from http://packages.python.org/tweepy/html/auth_tutorial.html
-		# and https://github.com/dound/gae-sessions/blob/master/README.markdown
 		verifier = self.request.get('oauth_verifier')
-		auth = tweepy.OAuthHandler( config.consumer_key, config.consumer_secret )
-		session = get_current_session()
-		token = session[ REQUEST_TOKEN_KEY ]
-		del session[ REQUEST_TOKEN_KEY ]
-		auth.set_request_token(token[0], token[1])
-
+		
 		tw_error = None
+		api = None
 		try:
-			auth.get_access_token(verifier)
+			api = twitter.consume_verifier( verifier )	
 		except tweepy.TweepError as err:
 			tw_error = err
 
 		if tw_error is None:
-			datastore.put_token( auth.access_token.key, auth.access_token.secret )
-			api = tweepy.API(auth)
 			self.response.out.write( "Auth complete for %s" % api.me().name )
 		else:
 			self.response.out.write( "Error! Failed to get access token." )
+			self.response.out.write( tw_error )
 
-		
-
-
-class SessionCleanupHandler():
-	
+class SessionCleanupHandler( webapp.RequestHandler ):
 	def get(self):
 		while not delete_expired_sessions():
 			pass
@@ -99,12 +81,76 @@ class SessionCleanupHandler():
 		logging.log( 1, message )
 		self.response.out.write( message )
 
+class RunHandler( webapp.RequestHandler ):
+	def get(self):
+		brains.run()
+
+def path_for_template( template_name ):
+	return os.path.join( os.path.dirname(__file__), 'templates', template_name )
+
+class SettingsHandler( webapp.RequestHandler ):
+	
+	def render_template( self, values=None, settings=None ):
+		
+		if( settings is None ):
+			settings = config.get_settings()
+		
+		creds = twitter.get_twitter_creds()
+		
+		template_values = {}
+		if values is not None:
+			template_values.update( values )
+		template_values[ "form_action" ] = get_url( self.request, "/settings" )
+		template_values[ "twitter_auth" ] = get_url( self.request, "/twitter_auth" )
+
+		if creds.screen_name is not None:
+			template_values[ 'twitter_username' ] = creds.screen_name
+
+		template_values[ 'guru_name' ] = settings.learning_guru
+		if settings.learning_style == constants.learning_style_oneuser:
+			template_values[ 'learnfrom_oneuser_checked' ] = "checked"
+		elif settings.learning_style == constants.learning_style_followers:
+			template_values[ 'learnfrom_followers_checked' ] = "checked"
+		elif settings.learning_style == constants.learning_style_followed:
+			template_values[ 'learnfrom_followed_checked' ] = "checked"
+		elif settings.learning_style == constants.learning_style_list:
+			template_values[ 'learnfrom_list_checked' ] = "checked"
+
+		if( settings.locquacity == constants.locquacity_scheduled ):
+			template_values[ 'locquacity_onschedule_checked' ] = "checked"
+		elif( settings.locquacity == constants.locquacity_replyonly ):
+			template_values[ 'locquacity_replyonly_checked' ] = "checked"
+
+		path = path_for_template( "settings.html" )
+		self.response.out.write( template.render( path, template_values ) )
+
+
+	# straight page load, dish out template
+	def get(self):
+		self.render_template() 
+	
+	# form data has been posted, process it
+	def post(self):
+		settings = config.get_settings()
+		settings.learning_style = self.request.get( 'learnfrom' )
+		settings.learning_guru = self.request.get( 'guru_name' )
+		settings.locquacity = self.request.get( 'locquacity' )
+		try:
+			settings.tweet_frequency = float( self.request.get( 'frequency' ) )
+		except Exception:
+			pass
+		settings.frequency_unit = self.request.get( 'frequency_unit' )
+		self.render_template( { "saved" : True }, settings )
+		settings.put()
+
 
 def main():
     application = webapp.WSGIApplication( [ ('/', MainHandler),
     										('/twitter_auth', AuthHandler),
     										('/oauth_return', AuthReturnHandler),
-    										('/session_cleanup', SessionCleanupHandler) ],
+    										('/session_cleanup', SessionCleanupHandler),
+    										('/settings', SettingsHandler),
+    										('/run', RunHandler) ],
                                          debug=True ) 
     util.run_wsgi_app(application)
 

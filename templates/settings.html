@@ -1,28 +1,54 @@
 <html>
 <head>
+	<script type="text/javascript">
+		function onTwitterAccountButtonClicked(button)
+		{
+			window.location.href = "{{twitter_auth}}";
+		}
+		function setElementVisibility( element, visible )
+		{
+			//alert( namebox )
+			element.style.display = visible ? "inline" : "none";
+		}
+		function onGuruRadioClicked(radio)
+		{
+			namebox = document.getElementById("guru_name");
+			val = document.forms[0].elements[ "learnfrom" ][0].value;
+			setElementVisibility( namebox, val == "oneuser" );
+		}
+
+	</script>
 </head>
 <body>
-	<form>
+	{% if saved %}
+		<h1>Saved</h1>
+	{% endif %}
+	<form method="POST" action="{{form_action}}">
 		<fieldset id="fieldset_1">
 			<legend>Twitter account</legend>
-			{{twitter_username}}
-			<input type="button" value="{{twitter_prompt}}" />
+			{% if twitter_username %}
+        		{{ twitter_username }}
+        		<input type="button" value="Change Twitter account >" onclick="onTwitterAccountButtonClicked(this);" />
+      		{% else %}
+      			No Twitter account set.
+        		<input type="button" value="Link to a Twitter account >" onclick="onTwitterAccountButtonClicked(this);" />
+      		{% endif %}
 		</fieldset>
 		<fieldset id="fieldset_2">
 			<legend>Absorption rate</legend>
-			<input type="radio" name="learnfrom" value="oneuser"/>
+			<input type="radio" name="learnfrom" value="oneuser" onclick="onGuruRadioClicked(this);" {{learnfrom_oneuser_checked}}/>
 			Learn from one user
-			<input style="display:none" type="text" name="guru" maxlength="20" value="Name of my guru"/>
-			<input type="radio" name="learnfrom" value="followers"/>
+			<input id="guru_name" style="display:none" type="text" name="guru_name" maxlength="20" value={{guru_name}}/>
+			<input type="radio" name="learnfrom" value="followers" onclick="onGuruRadioClicked(this);" {{learnfrom_followers_checked}}/>
 			Learn from my followers
-			<input type="radio" name="learnfrom" value="followed"/>
+			<input type="radio" name="learnfrom" value="followed" onclick="onGuruRadioClicked(this);" {{learnfrom_followed_checked}}/>
 			Learn from everyone I follow
-			<input type="radio" name="learnfrom" value="list"/>
+			<input type="radio" name="learnfrom" value="list" onclick="onGuruRadioClicked(this);" {{learnfrom_list_checked}}/>
 			Learn from a list
 		</fieldset>
 		<fieldset id="fieldset_2">
 			<legend>Locquacity</legend>
-			<input type="radio" name="locquacity" value="onschedule"/>
+			<input type="radio" name="locquacity" value="onschedule" {{locquacity_onschedule_checked}}/>
 			Tweet on schedule
 			<fieldset id="schedule_settings" style="display:none">
 				<input type="text" name="frequency" size="2" value="{{tweet_frequency}}"/>
@@ -31,7 +57,7 @@
 					<option value="mins" {{frequency_mins_selected}}>minutes</option>
 				</select>
 			</fieldset>
-			<input type="radio" name="locquacity" value="replyonly"/>
+			<input type="radio" name="locquacity" value="replyonly" {{locquacity_replyonly_checked}}/>
 			Speak only when spoken to
 		</fieldset>
 		<input type="submit" value="Save" />
