@@ -1,6 +1,8 @@
 from google.appengine.ext import db
-from google.appengine.ext import memcache
+from google.appengine.api import memcache
 import re
+import logging
+import datetime
 
 class VBWord( db.Model ):
 	word				= db.StringProperty( required=True )
@@ -34,14 +36,22 @@ class VerbivoreWorker:
 		self.words = {}
 		self.forward_links = {}
 
-	def digest( self, text ):
-		tokens = tokenise( text )
-		last_token = None
-		
-		print text
+	def digest( self, text, deadline ):
 
+		# logging.debug( "VerbivoreWorker.digest()" )
+		then = datetime.datetime.now()
+
+		tokens = tokenise( text )
+		now = datetime.datetime.now()
+		elapsed =  now - then
+		# logging.debug( "-> got %d tokens in %d seconds" % ( len(tokens), elapsed.total_seconds() ) )
+
+		last_token = None
 		for token in tokens:
-		
+			
+			if( datetime.datetime.now() >= deadline ):
+				break
+
 			if last_token is not None:
 				
 				# get link frequency between this and last token
@@ -68,16 +78,16 @@ class VerbivoreWorker:
 			count += 1
 			self.words[ token ] = count
 
-
 			last_token = token
 
-	def put( self ):
+	def put( self, deadline ):
 
-		print "***\nPUT\n***"
-
-		print self.words
+		logging.debug( "VerbivoreWorker.put()" )
+		logging.debug( "-> %d words" % len(self.words) )	
 
 		for word in self.words:
+			if( datetime.datetime.now() >= deadline ):
+				break
 			vb_word = vbword_for_word( word )
 			vb_word.frequency = self.words[ word ]
 			vb_word.put()
@@ -85,6 +95,8 @@ class VerbivoreWorker:
 			if word in self.forward_links:
 				forward_links = self.forward_links[ word ]
 				for to_word in forward_links:
+					if( datetime.datetime.now() >= deadline ):
+						break
 					db_link = VBWordForwardLink.all()
 					vb_to_word = vbword_for_word( to_word )
 					db_link.filter( "root_word = ", vb_word )

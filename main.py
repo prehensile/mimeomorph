@@ -69,6 +69,8 @@ class AuthReturnHandler( webapp.RequestHandler ):
 
 		if tw_error is None:
 			self.response.out.write( "Auth complete for %s" % api.me().name )
+			redirect_url = get_url( self.request, "/settings" )
+			self.redirect( redirect_url )
 		else:
 			self.response.out.write( "Error! Failed to get access token." )
 			self.response.out.write( tw_error )

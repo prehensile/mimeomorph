@@ -7,14 +7,12 @@
 		}
 		function setElementVisibility( element, visible )
 		{
-			//alert( namebox )
 			element.style.display = visible ? "inline" : "none";
 		}
 		function onGuruRadioClicked(radio)
 		{
 			namebox = document.getElementById("guru_name");
-			val = document.forms[0].elements[ "learnfrom" ][0].value;
-			setElementVisibility( namebox, val == "oneuser" );
+			setElementVisibility( namebox, radio.value == "oneuser" );
 		}
 
 	</script>
@@ -38,7 +36,7 @@
 			<legend>Absorption rate</legend>
 			<input type="radio" name="learnfrom" value="oneuser" onclick="onGuruRadioClicked(this);" {{learnfrom_oneuser_checked}}/>
 			Learn from one user
-			<input id="guru_name" style="display:none" type="text" name="guru_name" maxlength="20" value={{guru_name}}/>
+			<input id="guru_name" {% if not learnfrom_oneuser_checked %} style="display:none"{% endif %} type="text" name="guru_name" maxlength="20" value="{{guru_name}}"/>
 			<input type="radio" name="learnfrom" value="followers" onclick="onGuruRadioClicked(this);" {{learnfrom_followers_checked}}/>
 			Learn from my followers
 			<input type="radio" name="learnfrom" value="followed" onclick="onGuruRadioClicked(this);" {{learnfrom_followed_checked}}/>
