@@ -94,7 +94,7 @@ def run():
 	if tweet is not None:
 		try:
 			api.update_status( status=tweet )
-		except Exception as err:
+		except Exception, err:
 			logging.debug( "brains.run(): error from twitter api: %s" % err )
 
 	now = datetime.datetime.now()

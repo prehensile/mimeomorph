@@ -44,7 +44,7 @@ def consume_verifier( verifier ):
 	try:
 		auth.get_access_token( verifier )
 		logging.debug( "auth.get_access_token had no error." )
-	except tweepy.TweepError as err:
+	except tweepy.TweepError, err:
 		logging.debug( "auth.get_access_token had an error: %s" % err )
 
 	token_key = auth.access_token.key

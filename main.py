@@ -45,7 +45,7 @@ class AuthHandler( webapp.RequestHandler ):
 
 		try:
 			redirect_url = twitter.get_authurl( callback_url )
-		except tweepy.TweepError as err:
+		except tweepy.TweepError, err:
 			tw_error = err
 		
 		if redirect_url:
@@ -64,7 +64,7 @@ class AuthReturnHandler( webapp.RequestHandler ):
 		api = None
 		try:
 			api = twitter.consume_verifier( verifier )	
-		except tweepy.TweepError as err:
+		except tweepy.TweepError, err:
 			tw_error = err
 
 		if tw_error is None:

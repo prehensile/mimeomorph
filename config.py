@@ -23,7 +23,7 @@ def get_state():
 	state = MMState.all()
 	state = state.get()
 	if state is None:
-		settings = MMState()
+		state = MMState()
 	return state
 
 CONSUMER_KEY = "change me"
