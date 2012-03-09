@@ -94,12 +94,13 @@ def run():
 	if tweet is not None:
 		try:
 			api.update_status( status=tweet )
+			#logging.debug( tweet )
 		except Exception, err:
 			logging.debug( "brains.run(): error from twitter api: %s" % err )
 
 	now = datetime.datetime.now()
 	elapsed = now - then
-	logging.debug( "brains.run(): completed in %d seconds" % elapsed.total_seconds() )
+	logging.debug( "brains.run(): completed in %d seconds" % elapsed.seconds )
 
 	state.last_run = then
 	state.put()

@@ -118,8 +118,7 @@ class VerbivoreQueen:
 			
 			while len( out ) < length:
 
-				dead_end = False
-				to_break = False
+				dead_end = True
 
 				db_link = VBWordForwardLink.all()
 				db_link.filter( "root_word = ", db_word )
@@ -128,27 +127,21 @@ class VerbivoreQueen:
 				if( len(candidates) < 1 ):
 					dead_end = True
 				else:
-					while True:
+					reject_pool = []
+					lc = len(candidates)
+					while len(reject_pool) < lc:
 						db_link = random.choice( candidates )
 						db_word = db_link.next_word
 						word = db_word.word
 						if word[:1] == "@" or word[:1] == "#" or word[:7] == "http://":
-						 	if len( candidates ) == 1:
-								dead_end = True
-								break
+							reject_pool.append( db_link )
 						else:
+							dead_end = False
 							break
-
+				
 				if dead_end:
+					db_word = vbword_for_word( "." )
 					word = "."
-					if len(out) < length * 0.5:
-						db_word = vbword_for_word( "." )
-					else:
-						to_break = True
-
-				if len(word) + len(out) > length:
-					word = "."
-					to_break = True
 
 				if out[-1:] == ".":
 					word = word.capitalize()
@@ -158,13 +151,12 @@ class VerbivoreQueen:
 				else:
 					out = "%s%s" % ( out, word )
 
-				if to_break:
-					break
-
 				# abort if we're taking too long
 				if datetime.datetime.now() >= deadline:
 					break
 
+		if out[-1:] != ".":
+			out += "."
 		return out
 
 

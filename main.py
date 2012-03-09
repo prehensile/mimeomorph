@@ -86,6 +86,8 @@ class SessionCleanupHandler( webapp.RequestHandler ):
 class RunHandler( webapp.RequestHandler ):
 	def get(self):
 		brains.run()
+	def post(self):
+		brains.run()
 
 def path_for_template( template_name ):
 	return os.path.join( os.path.dirname(__file__), 'templates', template_name )
