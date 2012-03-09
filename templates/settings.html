@@ -9,12 +9,16 @@
 		{
 			element.style.display = visible ? "inline" : "none";
 		}
-		function onGuruRadioClicked(radio)
+		function onLearnRadioClicked(radio)
 		{
 			namebox = document.getElementById("guru_name");
 			setElementVisibility( namebox, radio.value == "oneuser" );
 		}
-
+		function onAlwaysTweetClicked(checkbox)
+		{
+			fieldset = document.getElementById("fieldset_speakonnew");
+			setElementVisibility( fieldset, !checkbox.checked );
+		}
 	</script>
 </head>
 <body>
@@ -34,29 +38,28 @@
 		</fieldset>
 		<fieldset id="fieldset_2">
 			<legend>Absorption rate</legend>
-			<input type="radio" name="learnfrom" value="oneuser" onclick="onGuruRadioClicked(this);" {{learnfrom_oneuser_checked}}/>
+			<input type="radio" name="learnfrom" value="oneuser" onclick="onLearnRadioClicked(this);" {{learnfrom_oneuser_checked}}/>
 			Learn from one user
 			<input id="guru_name" {% if not learnfrom_oneuser_checked %} style="display:none"{% endif %} type="text" name="guru_name" maxlength="20" value="{{guru_name}}"/>
-			<input type="radio" name="learnfrom" value="followers" onclick="onGuruRadioClicked(this);" {{learnfrom_followers_checked}}/>
-			Learn from my followers
-			<input type="radio" name="learnfrom" value="followed" onclick="onGuruRadioClicked(this);" {{learnfrom_followed_checked}}/>
-			Learn from everyone I follow
-			<input type="radio" name="learnfrom" value="list" onclick="onGuruRadioClicked(this);" {{learnfrom_list_checked}}/>
+			<input type="radio" name="learnfrom" value="list" onclick="onLearnRadioClicked(this);" {{learnfrom_list_checked}}/>
 			Learn from a list
+			<input type="radio" name="learnfrom" value="followed" onclick="onLearnRadioClicked(this);" {{learnfrom_followed_checked}}/>
+			Learn from everyone I follow
+			<input type="radio" name="learnfrom" value="followers" onclick="onLearnRadioClicked(this);" {{learnfrom_followers_checked}}/>
+			Learn from my followers
 		</fieldset>
 		<fieldset id="fieldset_2">
 			<legend>Locquacity</legend>
-			<input type="radio" name="locquacity" value="onschedule" {{locquacity_onschedule_checked}}/>
-			Tweet on schedule
-			<fieldset id="schedule_settings" style="display:none">
-				<input type="text" name="frequency" size="2" value="{{tweet_frequency}}"/>
-				<select name="frequency_unit">
-					<option value="hrs" {{frequency_hrs_selected}}>hours</option>
-					<option value="mins" {{frequency_mins_selected}}>minutes</option>
-				</select>
+			Wake up every <input type="text" name="tweet_frequency" size="5" value="{{tweet_frequency}}"/> hours with a <input type="text" name="tweet_chance" size="3" value="{{tweet_chance}}" /> chance of tweeting
+			<br/>
+			<input onclick="onAlwaysTweetClicked(this);" type="checkbox" name="locquacity_onschedule" value="true" {{locquacity_onschedule_checked}}/>
+			Always tweet
+			<fieldset id="fieldset_speakonnew" {% if locquacity_onschedule_checked %} style="display:none"{% else %} style="display:inline" {% endif %} >
+				<input type="checkbox" name="locquacity_speakonnew" value="true" {{locquacity_speakonnew_checked}}/>
+				Speak when I've learned something new
 			</fieldset>
-			<input type="radio" name="locquacity" value="replyonly" {{locquacity_replyonly_checked}}/>
-			Speak only when spoken to
+			<input type="checkbox" name="locquacity_reply" value="true" {{locquacity_reply_checked}}/>
+			Reply to @mentions and direct messages
 		</fieldset>
 		<input type="submit" value="Save" />
 	</form>

@@ -1,4 +1,9 @@
 cron:
+
 - description: daily session cleanup
   url: /session_cleanup
   schedule: every 24 hours
+
+- description: run cycle
+  url: /run
+  schedule: every 15 minutes

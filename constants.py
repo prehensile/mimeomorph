@@ -6,5 +6,6 @@ learning_style_followed = "followed"
 learning_style_list = "list"
 
 key_locquacity = "locquacity"
-locquacity_scheduled = "onschedule"
+locquacity_onschedule = "onschedule"
 locquacity_replyonly = "replyonly"
+locquacity_newonly = "newonly"

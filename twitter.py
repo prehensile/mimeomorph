@@ -73,7 +73,6 @@ def put_twitter_creds( key, secret, screen_name ):
 
 def get_user( screen_name ):
 	user = MMTwitterUser.all()
-	user.filter( 'screen_name = ', screen_name  )
 	user = user.get()
 	if user is None:
 		user = MMTwitterUser( screen_name=screen_name )

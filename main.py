@@ -109,6 +109,9 @@ class SettingsHandler( webapp.RequestHandler ):
 			template_values[ 'twitter_username' ] = creds.screen_name
 
 		template_values[ 'guru_name' ] = settings.learning_guru
+		template_values[ "tweet_frequency" ] = settings.tweet_frequency
+		template_values[ "tweet_chance" ] = settings.tweet_chance
+
 		if settings.learning_style == constants.learning_style_oneuser:
 			template_values[ 'learnfrom_oneuser_checked' ] = "checked"
 		elif settings.learning_style == constants.learning_style_followers:
@@ -118,10 +121,12 @@ class SettingsHandler( webapp.RequestHandler ):
 		elif settings.learning_style == constants.learning_style_list:
 			template_values[ 'learnfrom_list_checked' ] = "checked"
 
-		if( settings.locquacity == constants.locquacity_scheduled ):
+		if settings.locquacity_onschedule: 
 			template_values[ 'locquacity_onschedule_checked' ] = "checked"
-		elif( settings.locquacity == constants.locquacity_replyonly ):
-			template_values[ 'locquacity_replyonly_checked' ] = "checked"
+		if settings.locquacity_reply:
+			template_values[ 'locquacity_reply_checked' ] = "checked"
+		if settings.locquacity_speakonnew:
+			template_values[ 'locquacity_speakonnew_checked' ] = "checked"
 
 		path = path_for_template( "settings.html" )
 		self.response.out.write( template.render( path, template_values ) )
@@ -136,12 +141,15 @@ class SettingsHandler( webapp.RequestHandler ):
 		settings = config.get_settings()
 		settings.learning_style = self.request.get( 'learnfrom' )
 		settings.learning_guru = self.request.get( 'guru_name' )
-		settings.locquacity = self.request.get( 'locquacity' )
-		try:
-			settings.tweet_frequency = float( self.request.get( 'frequency' ) )
-		except Exception:
-			pass
-		settings.frequency_unit = self.request.get( 'frequency_unit' )
+		settings.locquacity_onschedule = self.request.get( 'locquacity_onschedule' ) == "true"
+		settings.locquacity_reply = self.request.get( 'locquacity_reply' ) == "true"
+		settings.locquacity_speakonnew = self.request.get( 'locquacity_speakonnew' ) == "true"
+		tweet_frequency = self.request.get( 'tweet_frequency' )
+		if tweet_frequency is not None and len(tweet_frequency) > 0:
+			settings.tweet_frequency = float( tweet_frequency )
+		tweet_chance = self.request.get( 'tweet_chance' )
+		if tweet_chance is not None and len(tweet_chance) > 0:
+			settings.tweet_chance = float( tweet_chance )
 		self.render_template( { "saved" : True }, settings )
 		settings.put()
 
