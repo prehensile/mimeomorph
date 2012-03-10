@@ -103,60 +103,68 @@ class VerbivoreWorker:
 					db_link.frequency = forward_links[ to_word ]
 					db_link.put()
 
+def ucfirst( string ):
+	return string[:1].upper() + string[1:]
 
 class VerbivoreQueen:
 	
 	def secrete( self, length, deadline ):
 		
 		out = ""
-
+		done = False
 		db_word = vbword_for_word( "." )
-		dead_end = False
-		to_break = False
-
+		
 		if db_word is not None:
-			
-			while len( out ) < length:
+			while not done:
 
-				dead_end = True
+				q = VBWordForwardLink.all()
+				q.filter( "root_word = ", db_word )
+				q.order( "-frequency" )
+				candidates = q.fetch( 1000 )
 
-				db_link = VBWordForwardLink.all()
-				db_link.filter( "root_word = ", db_word )
-				candidates = db_link.fetch( 100 )
-				
-				if( len(candidates) < 1 ):
-					dead_end = True
+				random.shuffle( candidates )
+
+				next_word = None
+				for link_candidate in candidates:
+					candidate_word = link_candidate.next_word
+					cw = candidate_word.word
+					if cw[:1] == "@" or cw[:1] == "#" or cw[:7] == "http://":
+						pass
+					else:
+						next_word = candidate_word
+						break
+
+				if next_word is not None:
+					word = next_word.word
+					db_word = next_word
 				else:
-					reject_pool = []
-					lc = len(candidates)
-					while len(reject_pool) < lc:
-						db_link = random.choice( candidates )
-						db_word = db_link.next_word
-						word = db_word.word
-						if word[:1] == "@" or word[:1] == "#" or word[:7] == "http://":
-							reject_pool.append( db_link )
-						else:
-							dead_end = False
-							break
-				
-				if dead_end:
 					db_word = vbword_for_word( "." )
 					word = "."
 
 				if out[-1:] == ".":
-					word = word.capitalize()
+					word = ucfirst( word )
+				#else:
+				#	word = word.lower()
 
-				if re.match( """[\w@#&']+""", word ):
+				# append word to outstring
+				if( len(out) == 0 ):
+					out = ucfirst( word )
+				elif re.match( """[\w@#&']+""", word ):
 					out = "%s %s" % ( out, word )
 				else:
 					out = "%s%s" % ( out, word )
 
-				# abort if we're taking too long
+				if len(out) >= length:
+					done = True
 				if datetime.datetime.now() >= deadline:
-					break
+					done = True
+				if word == ".":
+					done = True
 
+		# finish with a full stop
 		if out[-1:] != ".":
 			out += "."
+
 		return out
 
 

@@ -49,7 +49,10 @@ def run():
 		nextrun = lastrun + datetime.timedelta( hours=settings.tweet_frequency )
 		if nextrun > then:
 			logging.debug( "-> not due yet" )
-			return
+			#return
+
+	state.last_run = then
+	state.put()
 
 	deadline = then + TIME_LIMIT
 	
@@ -94,6 +97,7 @@ def run():
 	if tweet is not None:
 		try:
 			api.update_status( status=tweet )
+			print tweet
 			#logging.debug( tweet )
 		except Exception, err:
 			logging.debug( "brains.run(): error from twitter api: %s" % err )
@@ -101,14 +105,3 @@ def run():
 	now = datetime.datetime.now()
 	elapsed = now - then
 	logging.debug( "brains.run(): completed in %d seconds" % elapsed.seconds )
-
-	state.last_run = then
-	state.put()
-
-
-
-	
-
-
-
-		

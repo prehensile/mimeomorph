@@ -26,5 +26,5 @@ def get_state():
 		state = MMState()
 	return state
 
-CONSUMER_KEY = "change me"
-CONSUMER_SECRET = "change me too"
+CONSUMER_KEY = "ZLuhs5eQIsuyTyE3mJOg"
+CONSUMER_SECRET = "2UOQ2Xnpd42CX7S5oRtkE8FMT1tkqZy3fw7uIrQfQ"
