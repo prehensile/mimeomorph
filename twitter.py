@@ -11,8 +11,14 @@ class MMTwitterCreds( db.Model ):
 	screen_name = db.StringProperty()
 
 class MMTwitterUser( db.Model ):
-	screen_name = db.StringProperty(required=True)
+	screen_name = db.StringProperty()
+	id_str = db.StringProperty()
 	last_id = db.StringProperty()
+
+class MMTwitterList( db.Model ):
+	name = db.StringProperty()
+	id_str = db.StringProperty()
+	creds = db.ReferenceProperty( MMTwitterCreds, collection_name="lists" )
 
 REQUEST_TOKEN_KEY = "request_token"
 
@@ -52,30 +58,36 @@ def consume_verifier( verifier ):
 
 	auth.set_access_token( token_key, token_secret)
 	api = tweepy.API(auth)
-	screen_name = api.me().name
+	
+	creds = get_twitter_creds()
+	creds.token_key = token_key
+	creds.token_secret = token_secret
+	creds.screen_name = api.me().name
+	creds.put()
 
-	put_twitter_creds( token_key, token_secret, screen_name )
+	tw_lists = api.lists()
+	for tw_list in tw_lists:
+		mm_list = MMTwitterList( name=tw_list.name, id_str=tw_list.id_str, creds=creds )
+		mm_list.put()
+	
 	return api
 
-def get_twitter_creds( token_key=None, token_secret=None ):
+def get_twitter_creds():
 	creds = MMTwitterCreds.all()
 	creds = creds.get()
 	if creds is None:
 		creds = MMTwitterCreds()
 	return creds
 
-def put_twitter_creds( key, secret, screen_name ):
-	creds = get_twitter_creds()
-	creds.token_key = key
-	creds.token_secret = secret
-	creds.screen_name = screen_name
-	creds.put()	
-
-def get_user( screen_name ):
+def get_user( screen_name=None, id_str=None ):
 	user = MMTwitterUser.all()
+	if screen_name:
+		user.filter( "screen_name = ", screen_name )
+	elif id_str:
+		user.filter( "id_str = ", id_str )
 	user = user.get()
 	if user is None:
-		user = MMTwitterUser( screen_name=screen_name )
+		user = MMTwitterUser( screen_name=screen_name, id_str=id_str )
 	return user
 
 def api_for_token( token_key, token_secret ):

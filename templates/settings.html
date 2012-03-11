@@ -1,5 +1,10 @@
 <html>
 <head>
+	<style type="text/css">
+		#fieldset_learning_lists { display: inline; }
+		fieldset.disabled { color: gray; }
+		fieldset fieldset { border: none }
+	</style>
 	<script type="text/javascript">
 		function onTwitterAccountButtonClicked(button)
 		{
@@ -13,6 +18,10 @@
 		{
 			namebox = document.getElementById("guru_name");
 			setElementVisibility( namebox, radio.value == "oneuser" );
+
+			listselect = document.getElementById("list_select");
+			if( listselect )
+				setElementVisibility( listselect, radio.value == "list" );			
 		}
 		function onAlwaysTweetClicked(checkbox)
 		{
@@ -26,29 +35,38 @@
 		<h1>Saved</h1>
 	{% endif %}
 	<form method="POST" action="{{form_action}}">
-		<fieldset id="fieldset_1">
+		<fieldset id="fieldset_account">
 			<legend>Twitter account</legend>
 			{% if twitter_username %}
         		{{ twitter_username }}
-        		<input type="button" value="Change Twitter account >" onclick="onTwitterAccountButtonClicked(this);" />
+        		<input type="button" value="Update Twitter account >" onclick="onTwitterAccountButtonClicked(this);" />
       		{% else %}
       			No Twitter account set.
         		<input type="button" value="Link to a Twitter account >" onclick="onTwitterAccountButtonClicked(this);" />
       		{% endif %}
 		</fieldset>
-		<fieldset id="fieldset_2">
+		<fieldset id="fieldset_learning">
 			<legend>Absorption rate</legend>
 			<input type="radio" name="learnfrom" value="oneuser" onclick="onLearnRadioClicked(this);" {{learnfrom_oneuser_checked}}/>
 			Learn from one user
 			<input id="guru_name" {% if not learnfrom_oneuser_checked %} style="display:none"{% endif %} type="text" name="guru_name" maxlength="20" value="{{guru_name}}"/>
-			<input type="radio" name="learnfrom" value="list" onclick="onLearnRadioClicked(this);" {{learnfrom_list_checked}}/>
-			Learn from a list
-			<input type="radio" name="learnfrom" value="followed" onclick="onLearnRadioClicked(this);" {{learnfrom_followed_checked}}/>
+			<input type="radio" name="learnfrom" value="following" onclick="onLearnRadioClicked(this);" {{learnfrom_following_checked}}/>
 			Learn from everyone I follow
+			<fieldset {% if not lists %}class="disabled"{% endif %} id="fieldset_learning_lists">
+				<input type="radio" name="learnfrom" value="list" onclick="onLearnRadioClicked(this);" {{learnfrom_list_checked}} {% if not lists %}disabled{% endif %}/>
+				Learn from a list
+				{% if lists %}
+					<select id="list_select" name="list_select" {% if not learnfrom_list_checked %}style="display:none"{% endif %} >
+						{% for list in lists %}
+							<option value="{{list.id}}">{{list.name}}</option>
+						{% endfor %}
+					</select>
+				{% endif %}
+			</fieldset>
 			<input type="radio" name="learnfrom" value="followers" onclick="onLearnRadioClicked(this);" {{learnfrom_followers_checked}}/>
 			Learn from my followers
 		</fieldset>
-		<fieldset id="fieldset_2">
+		<fieldset id="fieldset_locquacity">
 			<legend>Locquacity</legend>
 			Wake up every <input type="text" name="tweet_frequency" size="5" value="{{tweet_frequency}}"/> hours with a <input type="text" name="tweet_chance" size="3" value="{{tweet_chance}}" /> chance of tweeting
 			<br/>

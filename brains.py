@@ -11,66 +11,73 @@ from google.appengine.api import taskqueue
 # don't take any longer than this to process.
 TIME_LIMIT = datetime.timedelta( minutes=9 )
 
-def digest_user( api, worker, screen_name, deadline ):
+def digest_user( api, deadline, mm_twitteruser ):
 	
-	
-	user = twitter.get_user( screen_name )
-	last_id = user.last_id
+	last_id = mm_twitteruser.last_id
 	num_statuses = 20
 	if last_id is None:
 		# if we haven't seen this user before, get more statuses for better input
 		num_statuses = 100
 
-	statuses = api.user_timeline( count=num_statuses, screen_name=screen_name, since_id=last_id, include_rts=False )	
-	
+	if mm_twitteruser.id_str:
+		statuses = api.user_timeline( count=num_statuses, user_id=mm_twitteruser.id_str, since_id=last_id, include_rts=False )	
+	elif mm_twitteruser.screen_name:
+		statuses = api.user_timeline( count=num_statuses, screen_name=mm_twitteruser.screen_name, since_id=last_id, include_rts=False )	
+
 	statuses_digested = 0
-	for status in reversed(statuses): # reversed so we start at the oldest, in case we have to abort
-		last_id = status.id_str
-		worker.digest( status.text, deadline )
-		statuses_digested = statuses_digested + 1
-		if datetime.datetime.now() >= deadline:
-			break
-	
-	user.last_id = last_id
-	user.put()
+	if statuses is not None:
+		if len(statuses) > 0:
+			worker = verbivorejr.VerbivoreWorker()
+			for status in reversed(statuses): # reversed so we start at the oldest, in case we have to abort 
+				last_id = status.id_str
+				worker.digest( status.text, deadline )
+				statuses_digested = statuses_digested + 1
+				if datetime.datetime.now() >= deadline:
+					logging.debug( "brains.digest_user(), hit deadline at %d statuses" % statuses_digested )
+					break
+			worker.put( deadline )
+			mm_twitteruser.last_id = last_id
+			mm_twitteruser.put()
 	
 	return statuses_digested
 
-def run():
+def run( force_tweet=False ):
 
-	logging.debug( "brains.run()" )
+	logging.debug( "brains.run(), force_tweet is %s" % force_tweet )
 
 	then = datetime.datetime.now()
 	settings = config.get_settings()
-	state = config.get_state()
-	lastrun = state.last_run
 
-	if lastrun is not None:
-		nextrun = lastrun + datetime.timedelta( hours=settings.tweet_frequency )
-		if nextrun > then:
-			logging.debug( "-> not due yet" )
-			#return
+	if force_tweet is False:
+		state = config.get_state()
+		lastrun = state.last_run
+		if lastrun is not None:
+			nextrun = lastrun + datetime.timedelta( hours=settings.tweet_frequency )
+			if nextrun > then:
+				logging.debug( "-> not due yet" )
+				return
 
-	state.last_run = then
-	state.put()
+		state.last_run = then
+		state.put()
 
 	deadline = then + TIME_LIMIT
-	
 	learning_style = settings.learning_style
 	api = twitter.get_api()
-	worker = verbivorejr.VerbivoreWorker()
 	statuses_digested = 0
 
+	logging.debug( "brains.run(): learning_style is: %s" % learning_style )
 	if learning_style == constants.learning_style_oneuser:
 		# learn from one user
 		guru_name = settings.learning_guru
-		statuses_digested = digest_user( api, worker, guru_name, deadline )
+		guru = twitter.get_user( screen_name=guru_name )
+		statuses_digested = digest_user( api, deadline, guru )
+	elif learning_style == constants.learning_style_following:
+		guru_ids = api.friends_ids( stringify_ids=True )
+		for guru_id in guru_ids:
+			guru = twitter.get_user( id_str=guru_id )
+			statuses_digested += digest_user( api, deadline, guru )
 	
 	logging.debug( "brains.run(): digested %d new statuses" % statuses_digested )
-
-	# store if we've learned anything new
-	if statuses_digested > 0:
-		worker.put( deadline )
 
 	# check deadline
 	if datetime.datetime.now() >= deadline:
@@ -79,7 +86,7 @@ def run():
 		return
 
 	# only continue if chance is met
-	if settings.tweet_chance < random.random():
+	if settings.tweet_chance < random.random() and force_tweet is False:
 		logging.debug( "brains.run(): didn't meet tweet_chance of %2.1f" % settings.tweet_chance )
 		return
 
@@ -97,7 +104,7 @@ def run():
 	if tweet is not None:
 		try:
 			api.update_status( status=tweet )
-			print tweet
+			# print tweet
 			#logging.debug( tweet )
 		except Exception, err:
 			logging.debug( "brains.run(): error from twitter api: %s" % err )

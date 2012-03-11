@@ -85,7 +85,8 @@ class SessionCleanupHandler( webapp.RequestHandler ):
 
 class RunHandler( webapp.RequestHandler ):
 	def get(self):
-		brains.run()
+		force_tweet = self.request.get( "force_tweet" )
+		brains.run( force_tweet == "true" )
 	def post(self):
 		brains.run()
 
@@ -114,12 +115,22 @@ class SettingsHandler( webapp.RequestHandler ):
 		template_values[ "tweet_frequency" ] = settings.tweet_frequency
 		template_values[ "tweet_chance" ] = settings.tweet_chance
 
+		try:
+			lists_in = creds.lists
+			if lists_in:
+				lists_out = []
+				for list_in in lists_in:
+					lists_out.append( { 'name' : list_in.name, 'id' : list_in.id_str } )  
+				template_values[ 'lists' ] = lists_out
+		except Exception, err:
+			pass
+
 		if settings.learning_style == constants.learning_style_oneuser:
 			template_values[ 'learnfrom_oneuser_checked' ] = "checked"
 		elif settings.learning_style == constants.learning_style_followers:
 			template_values[ 'learnfrom_followers_checked' ] = "checked"
-		elif settings.learning_style == constants.learning_style_followed:
-			template_values[ 'learnfrom_followed_checked' ] = "checked"
+		elif settings.learning_style == constants.learning_style_following:
+			template_values[ 'learnfrom_following_checked' ] = "checked"
 		elif settings.learning_style == constants.learning_style_list:
 			template_values[ 'learnfrom_list_checked' ] = "checked"
 
