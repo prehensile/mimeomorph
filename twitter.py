@@ -1,6 +1,7 @@
 import tweepy
 import config
 from google.appengine.ext import db
+from google.appengine.api import users
 import logging
 from gaesessions import delete_expired_sessions
 from gaesessions import get_current_session
@@ -9,6 +10,7 @@ class MMTwitterCreds( db.Model ):
 	token_key = db.StringProperty()
 	token_secret = db.StringProperty()	
 	screen_name = db.StringProperty()
+	owner = db.UserProperty()
 
 class MMTwitterUser( db.Model ):
 	screen_name = db.StringProperty()
@@ -59,10 +61,13 @@ def consume_verifier( verifier ):
 	auth.set_access_token( token_key, token_secret)
 	api = tweepy.API(auth)
 	
-	creds = get_twitter_creds()
+	screen_name = api.me().screen_name
+	creds = get_twitter_creds( screen_name=screen_name )
 	creds.token_key = token_key
 	creds.token_secret = token_secret
-	creds.screen_name = api.me().name
+	user = users.get_current_user()
+	if user is not None:
+		creds.owner = user
 	creds.put()
 
 	tw_lists = api.lists()
@@ -72,12 +77,17 @@ def consume_verifier( verifier ):
 	
 	return api
 
-def get_twitter_creds():
+def get_twitter_creds( screen_name ):
 	creds = MMTwitterCreds.all()
+	creds.filter( "screen_name = ", screen_name )
 	creds = creds.get()
 	if creds is None:
-		creds = MMTwitterCreds()
+		creds = MMTwitterCreds( screen_name=screen_name )
 	return creds
+
+def get_all_creds():
+	creds = MMTwitterCreds.all()
+	return creds.fetch()
 
 def get_user( screen_name=None, id_str=None ):
 	user = MMTwitterUser.all()
@@ -96,9 +106,5 @@ def api_for_token( token_key, token_secret ):
 	api = tweepy.API(auth)
 	return( api )
 
-def get_api():
-	creds = get_twitter_creds()
-	if creds is not None:
-		return api_for_token( creds.token_key, creds.token_secret )
-	else:
-		raise Exception( "No stored Twitter credentials." )
+def get_api( creds ):
+	return api_for_token( creds.token_key, creds.token_secret )

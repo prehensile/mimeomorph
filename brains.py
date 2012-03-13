@@ -7,6 +7,10 @@ import config
 import logging
 import random
 from google.appengine.api import taskqueue
+from google.appengine.api import namespace_manager
+import settings
+import state
+
 
 # don't take any longer than this to process.
 TIME_LIMIT = datetime.timedelta( minutes=9 )
@@ -41,34 +45,36 @@ def digest_user( api, deadline, mm_twitteruser ):
 	
 	return statuses_digested
 
-def run( force_tweet=False ):
+def run( creds, force_tweet=False ):
 
 	logging.debug( "brains.run(), force_tweet is %s" % force_tweet )
 
 	then = datetime.datetime.now()
-	settings = config.get_settings()
+	bot_settings = settings.get_settings( creds )
 
 	if force_tweet is False:
-		state = config.get_state()
-		lastrun = state.last_run
+		bot_state = state.get_state( creds )
+		lastrun = bot_state.last_run
 		if lastrun is not None:
-			nextrun = lastrun + datetime.timedelta( hours=settings.tweet_frequency )
+			nextrun = lastrun + datetime.timedelta( hours=bot_settings.tweet_frequency )
 			if nextrun > then:
 				logging.debug( "-> not due yet" )
 				return
 
-		state.last_run = then
-		state.put()
+		bot_state.last_run = then
+		bot_state.put()
 
 	deadline = then + TIME_LIMIT
-	learning_style = settings.learning_style
-	api = twitter.get_api()
+	learning_style = bot_settings.learning_style
+	api = twitter.get_api( creds )
 	statuses_digested = 0
+
+	namespace_manager.set_namespace( creds.screen_name )
 
 	logging.debug( "brains.run(): learning_style is: %s" % learning_style )
 	if learning_style == constants.learning_style_oneuser:
 		# learn from one user
-		guru_name = settings.learning_guru
+		guru_name = bot_settings.learning_guru
 		guru = twitter.get_user( screen_name=guru_name )
 		statuses_digested = digest_user( api, deadline, guru )
 	elif learning_style == constants.learning_style_following:
@@ -82,30 +88,33 @@ def run( force_tweet=False ):
 	# check deadline
 	if datetime.datetime.now() >= deadline:
 		logging.debug( "brains.run(): aborted after put()'ing worker, deadline is looming." )
-		taskqueue.add( url="/run" )
+		taskqueue.add( url="/%s/run" % api.me().screen_name )
 		return
 
 	# only continue if chance is met
-	if settings.tweet_chance < random.random() and force_tweet is False:
-		logging.debug( "brains.run(): didn't meet tweet_chance of %2.1f" % settings.tweet_chance )
+	if bot_settings.tweet_chance < random.random() and force_tweet is False:
+		logging.debug( "brains.run(): didn't meet tweet_chance of %2.1f" % bot_settings.tweet_chance )
 		return
 
 	queen = verbivorejr.VerbivoreQueen()
 	tweet = None
 
-	if settings.locquacity_onschedule:
+	if force_tweet:
+		logging.debug( "brains.run(): force_tweet is set" )
+		tweet = queen.secrete( 130, deadline )
+	elif bot_settings.locquacity_onschedule:
 		logging.debug( "brains.run(): will tweet on schedule" )
 		tweet = queen.secrete( 130, deadline )
-	elif settings.locquacity_speakonnew and statuses_digested > 0 :
+	elif bot_settings.locquacity_speakonnew and statuses_digested > 0 :
 		logging.debug( "brains.run(): locquacity_speakonnew, statuses_digested: %s" % statuses_digested )
 		tweet = queen.secrete( 130, deadline )
 
 	
 	if tweet is not None:
 		try:
-			api.update_status( status=tweet )
+			# api.update_status( status=tweet )
 			# print tweet
-			#logging.debug( tweet )
+			logging.debug( tweet )
 		except Exception, err:
 			logging.debug( "brains.run(): error from twitter api: %s" % err )
 

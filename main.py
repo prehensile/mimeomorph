@@ -22,9 +22,13 @@ import logging
 import config
 import datastore
 import brains
+import settings
 from google.appengine.ext.webapp import template
 import constants
 import os
+from google.appengine.api import users
+from google.appengine.api import taskqueue
+
 
 def get_url( request, path ):
 	callback_url = request.url
@@ -36,45 +40,6 @@ class MainHandler(webapp.RequestHandler):
     def get(self):
         self.response.out.write('Hello world!')
 
-class AuthHandler( webapp.RequestHandler ):
-	def get(self):
-		
-		callback_url = get_url( self.request, "/oauth_return" )
-		redirect_url = None
-		tw_error = None
-
-		try:
-			redirect_url = twitter.get_authurl( callback_url )
-		except tweepy.TweepError, err:
-			tw_error = err
-		
-		if redirect_url:
-			self.response.out.write( "Redirecting to twitter for authorisation..." )
-			self.redirect( redirect_url )
-		else:
-			self.response.out.write( "Error! Failed to get request token.\not" )
-			self.response.out.write( tw_error )	
-
-
-class AuthReturnHandler( webapp.RequestHandler ):
-	def get(self):
-		verifier = self.request.get('oauth_verifier')
-		
-		tw_error = None
-		api = None
-		try:
-			api = twitter.consume_verifier( verifier )	
-		except tweepy.TweepError, err:
-			tw_error = err
-
-		if tw_error is None:
-			self.response.out.write( "Auth complete for %s" % api.me().name )
-			redirect_url = get_url( self.request, "/settings" )
-			self.redirect( redirect_url )
-		else:
-			self.response.out.write( "Error! Failed to get access token." )
-			self.response.out.write( tw_error )
-
 class SessionCleanupHandler( webapp.RequestHandler ):
 	def get(self):
 		while not delete_expired_sessions():
@@ -84,36 +49,50 @@ class SessionCleanupHandler( webapp.RequestHandler ):
 		self.response.out.write( message )
 
 class RunHandler( webapp.RequestHandler ):
-	def get(self):
-		force_tweet = self.request.get( "force_tweet" )
-		brains.run( force_tweet == "true" )
-	def post(self):
-		brains.run()
+	
+	def run_one( self, bot_name ):
+		creds = twitter.get_twitter_creds( bot_name )
+		force_tweet = self.request.get( "force_tweet") == "true"
+		brains.run( creds, force_tweet )
+
+	def run_all( self ):
+		creds = twitter.get_all_creds()
+		for mm_twittercreds in creds:
+			taskqueue.add( "%s/run" % mm_twittercreds.screen_name )
+
+	def handle_both( self, bot_name=None ):
+		if bot_name is None:
+			self.run_all()
+		else:
+			self.run_one( bot_name )
+
+	def get( self, bot_name=None ):
+		self.handle_both( bot_name )
+	
+	def post( self, bot_name=None ):
+		self.handle_both( bot_name )  
 
 def path_for_template( template_name ):
 	return os.path.join( os.path.dirname(__file__), 'templates', template_name )
 
 class SettingsHandler( webapp.RequestHandler ):
 	
-	def render_template( self, values=None, settings=None ):
-		
-		if( settings is None ):
-			settings = config.get_settings()
-		
-		creds = twitter.get_twitter_creds()
+	def render_template( self, creds, bot_settings=None, values=None ):
 		
 		template_values = {}
 		if values is not None:
 			template_values.update( values )
-		template_values[ "form_action" ] = get_url( self.request, "/settings" )
-		template_values[ "twitter_auth" ] = get_url( self.request, "/twitter_auth" )
+		template_values[ "form_action" ] = self.request.path
 
 		if creds.screen_name is not None:
 			template_values[ 'twitter_username' ] = creds.screen_name
 
-		template_values[ 'guru_name' ] = settings.learning_guru
-		template_values[ "tweet_frequency" ] = settings.tweet_frequency
-		template_values[ "tweet_chance" ] = settings.tweet_chance
+		if( bot_settings is None ):
+			bot_settings = settings.get_settings( creds )
+
+		template_values[ 'guru_name' ] = bot_settings.learning_guru
+		template_values[ "tweet_frequency" ] = bot_settings.tweet_frequency
+		template_values[ "tweet_chance" ] = bot_settings.tweet_chance
 
 		try:
 			lists_in = creds.lists
@@ -125,55 +104,123 @@ class SettingsHandler( webapp.RequestHandler ):
 		except Exception, err:
 			pass
 
-		if settings.learning_style == constants.learning_style_oneuser:
+		if bot_settings.learning_style == constants.learning_style_oneuser:
 			template_values[ 'learnfrom_oneuser_checked' ] = "checked"
-		elif settings.learning_style == constants.learning_style_followers:
+		elif bot_settings.learning_style == constants.learning_style_followers:
 			template_values[ 'learnfrom_followers_checked' ] = "checked"
-		elif settings.learning_style == constants.learning_style_following:
+		elif bot_settings.learning_style == constants.learning_style_following:
 			template_values[ 'learnfrom_following_checked' ] = "checked"
-		elif settings.learning_style == constants.learning_style_list:
+		elif bot_settings.learning_style == constants.learning_style_list:
 			template_values[ 'learnfrom_list_checked' ] = "checked"
 
-		if settings.locquacity_onschedule: 
+		if bot_settings.locquacity_onschedule: 
 			template_values[ 'locquacity_onschedule_checked' ] = "checked"
-		if settings.locquacity_reply:
+		if bot_settings.locquacity_reply:
 			template_values[ 'locquacity_reply_checked' ] = "checked"
-		if settings.locquacity_speakonnew:
+		if bot_settings.locquacity_speakonnew:
 			template_values[ 'locquacity_speakonnew_checked' ] = "checked"
 
 		path = path_for_template( "settings.html" )
 		self.response.out.write( template.render( path, template_values ) )
 
+	def authenticate_user( self, creds ):
+		user = users.get_current_user()
+		return user is not None and user == creds.owner
 
 	# straight page load, dish out template
-	def get(self):
-		self.render_template() 
+	def get( self, bot_name ):
+		creds = twitter.get_twitter_creds( bot_name )
+		if self.authenticate_user( creds ):
+			self.render_template( creds ) 
+		else:
+			path = path_for_template( "notowner.html" )
+			self.response.out.write( template.render( path, template_values ) )
 	
 	# form data has been posted, process it
-	def post(self):
-		settings = config.get_settings()
-		settings.learning_style = self.request.get( 'learnfrom' )
-		settings.learning_guru = self.request.get( 'guru_name' )
-		settings.locquacity_onschedule = self.request.get( 'locquacity_onschedule' ) == "true"
-		settings.locquacity_reply = self.request.get( 'locquacity_reply' ) == "true"
-		settings.locquacity_speakonnew = self.request.get( 'locquacity_speakonnew' ) == "true"
-		tweet_frequency = self.request.get( 'tweet_frequency' )
-		if tweet_frequency is not None and len(tweet_frequency) > 0:
-			settings.tweet_frequency = float( tweet_frequency )
-		tweet_chance = self.request.get( 'tweet_chance' )
-		if tweet_chance is not None and len(tweet_chance) > 0:
-			settings.tweet_chance = float( tweet_chance )
-		self.render_template( { "saved" : True }, settings )
-		settings.put()
+	def post( self, bot_name ):
+		
+		creds = twitter.get_twitter_creds( bot_name )
 
+		if not self.authenticate_user( creds ):
+			path = path_for_template( "notowner.html" )
+			self.response.out.write( template.render( path, template_values ) )
+		else:
+			bot_settings = settings.get_settings( creds )
+			bot_settings.learning_style = self.request.get( 'learnfrom' )
+			bot_settings.learning_guru = self.request.get( 'guru_name' )
+			bot_settings.locquacity_onschedule = self.request.get( 'locquacity_onschedule' ) == "true"
+			bot_settings.locquacity_reply = self.request.get( 'locquacity_reply' ) == "true"
+			bot_settings.locquacity_speakonnew = self.request.get( 'locquacity_speakonnew' ) == "true"
+			tweet_frequency = self.request.get( 'tweet_frequency' )
+			if tweet_frequency is not None and len(tweet_frequency) > 0:
+				bot_settings.tweet_frequency = float( tweet_frequency )
+			tweet_chance = self.request.get( 'tweet_chance' )
+			if tweet_chance is not None and len(tweet_chance) > 0:
+				bot_settings.tweet_chance = float( tweet_chance )
+			self.render_template( creds, bot_settings, { "saved" : True } )
+			bot_settings.creds = creds
+			bot_settings.put()
+
+class NewHandler( webapp.RequestHandler ):
+	
+	# vanilla get, serve up new bot page
+	def get(self):
+		
+		template_values = {}
+		user = users.get_current_user()
+
+		if user is None:
+			msg = "Sorry, you need to be logged in to a Google account to create bots.<br/>"
+			msg += "<a href=\"%s\">Sign in or register</a>." % users.create_login_url("/new")
+			template_values[ 'message' ] = msg
+		else:
+			redirect_url = None
+			tw_error = None
+			callback_url = get_url( self.request, "/oauth_return" )
+			template_values[ 'form_action' ] = "/twitter_return"
+
+			try:
+				redirect_url = twitter.get_authurl( callback_url )
+			except tweepy.TweepError, err:
+				tw_error = err
+
+			if tw_error is not None:
+				template_values[ 'message' ] = "Error! Failed to get request token."
+			else:
+				template_values[ "twitter_auth" ] = redirect_url
+
+		path = path_for_template( "new.html" )
+		self.response.out.write( template.render( path, template_values ) )
+
+class OAuthReturnHandler( webapp.RequestHandler ):
+	def get(self):
+
+		verifier = self.request.get('oauth_verifier')
+		tw_error = None
+		api = None
+		
+		try:
+			api = twitter.consume_verifier( verifier )	
+		except tweepy.TweepError, err:
+			tw_error = err
+
+		if tw_error is None:
+			me = api.me()
+			self.response.out.write( "Auth complete for %s, redirecting..." % me.name )
+			redirect_url = get_url( self.request, "/%s/settings" % me.screen_name )
+			self.redirect( redirect_url )
+		else:
+			self.response.out.write( "Error! Failed to get access token." )
+			self.response.out.write( tw_error )
 
 def main():
     application = webapp.WSGIApplication( [ ('/', MainHandler),
-    										('/twitter_auth', AuthHandler),
-    										('/oauth_return', AuthReturnHandler),
+    										('/new', NewHandler),
+    										('/oauth_return', OAuthReturnHandler),
     										('/session_cleanup', SessionCleanupHandler),
-    										('/settings', SettingsHandler),
-    										('/run', RunHandler) ],
+    										('/run', RunHandler),
+    										('/(.*)/run', RunHandler),
+    										('/(.*)/settings', SettingsHandler) ],
                                          debug=True ) 
     util.run_wsgi_app(application)
 

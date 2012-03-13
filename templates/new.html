@@ -1,0 +1,20 @@
+<html>
+	<head>
+		<script type="text/javascript">
+		function onTwitterAccountButtonClicked(button)
+		{
+			window.location.href = "{{twitter_auth}}";
+		}
+		</script>
+	</head>
+	<body>
+		<h1>new mimeomorph</h1>
+		{{message}}
+		{% if form_action %}
+		<form method="POST" action="{{form_action}}">	
+			To get started, we'll need to connect up to a twitter account which your mimeomorph will use.<br/>
+			<input type="button" value="Link to a Twitter account >" onclick="onTwitterAccountButtonClicked(this);" />
+		</form>
+		{% endif %}
+	</body>
+</html>

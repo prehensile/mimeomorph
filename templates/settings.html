@@ -37,13 +37,8 @@
 	<form method="POST" action="{{form_action}}">
 		<fieldset id="fieldset_account">
 			<legend>Twitter account</legend>
-			{% if twitter_username %}
         		{{ twitter_username }}
         		<input type="button" value="Update Twitter account >" onclick="onTwitterAccountButtonClicked(this);" />
-      		{% else %}
-      			No Twitter account set.
-        		<input type="button" value="Link to a Twitter account >" onclick="onTwitterAccountButtonClicked(this);" />
-      		{% endif %}
 		</fieldset>
 		<fieldset id="fieldset_learning">
 			<legend>Absorption rate</legend>
