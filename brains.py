@@ -130,7 +130,6 @@ def run( creds, force_tweet=False ):
 	if bot_settings.locquacity_reply:
 		
 		last_replied_id = creds.last_replied_id
-		last_replied_id = None
 		mentions = api.mentions( since_id=last_replied_id )
 		
 		for mention in mentions:
