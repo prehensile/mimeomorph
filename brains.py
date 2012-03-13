@@ -45,10 +45,10 @@ def digest_user( api, deadline, mm_twitteruser ):
 	
 	return statuses_digested
 
-def post_tweet( api, tweet ):
+def post_tweet( api, tweet, in_reply_to_status_id=None ):
 	if tweet is not None:
 		try:
-			api.update_status( status=tweet )
+			api.update_status( status=tweet, in_reply_to_status_id=in_reply_to_status_id )
 			# print tweet
 			# logging.debug( tweet )
 		except Exception, err:
@@ -145,9 +145,10 @@ def run( creds, force_tweet=False ):
 				safety = safety -1
 
 			if tweet is not None:
-				reply = "%s %s" % (reply, tweet)
-				post_tweet( api, reply )
 				last_replied_id = mention.id_str
+				reply = "%s %s" % (reply, tweet)
+				post_tweet( api, reply, last_replied_id )
+				
 
 		creds.last_replied_id = last_replied_id
 		creds.put()
