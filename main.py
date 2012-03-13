@@ -57,8 +57,11 @@ class RunHandler( webapp.RequestHandler ):
 
 	def run_all( self ):
 		creds = twitter.get_all_creds()
+		logging.debug( "RunHandler.run_all: queue up %d jobs" % len( creds ) )
 		for mm_twittercreds in creds:
-			taskqueue.add( "%s/run" % mm_twittercreds.screen_name )
+			url = "/%s/run" % mm_twittercreds.screen_name
+			logging.debug( "-> queue up job: %s" % url )
+			taskqueue.add( url=url )
 
 	def handle_both( self, bot_name=None ):
 		if bot_name is None:

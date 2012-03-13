@@ -48,9 +48,9 @@ def digest_user( api, deadline, mm_twitteruser ):
 def post_tweet( api, tweet ):
 	if tweet is not None:
 		try:
-			# api.update_status( status=tweet )
+			api.update_status( status=tweet )
 			# print tweet
-			logging.debug( tweet )
+			# logging.debug( tweet )
 		except Exception, err:
 			logging.debug( "brains.run(): error from twitter api: %s" % err )
 

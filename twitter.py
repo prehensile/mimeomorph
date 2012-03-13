@@ -88,7 +88,7 @@ def get_twitter_creds( screen_name ):
 
 def get_all_creds():
 	creds = MMTwitterCreds.all()
-	return creds.fetch()
+	return creds.fetch( 1000 )
 
 def get_user( screen_name=None, id_str=None ):
 	user = MMTwitterUser.all()
