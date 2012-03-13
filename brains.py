@@ -45,6 +45,15 @@ def digest_user( api, deadline, mm_twitteruser ):
 	
 	return statuses_digested
 
+def post_tweet( api, tweet ):
+	if tweet is not None:
+		try:
+			# api.update_status( status=tweet )
+			# print tweet
+			logging.debug( tweet )
+		except Exception, err:
+			logging.debug( "brains.run(): error from twitter api: %s" % err )
+
 def run( creds, force_tweet=False ):
 
 	logging.debug( "brains.run(), force_tweet is %s" % force_tweet )
@@ -96,27 +105,52 @@ def run( creds, force_tweet=False ):
 		logging.debug( "brains.run(): didn't meet tweet_chance of %2.1f" % bot_settings.tweet_chance )
 		return
 
-	queen = verbivorejr.VerbivoreQueen()
-	tweet = None
+	do_tweet = False
 
 	if force_tweet:
 		logging.debug( "brains.run(): force_tweet is set" )
-		tweet = queen.secrete( 130, deadline )
+		do_tweet = True
 	elif bot_settings.locquacity_onschedule:
 		logging.debug( "brains.run(): will tweet on schedule" )
-		tweet = queen.secrete( 130, deadline )
+		do_tweet = True
 	elif bot_settings.locquacity_speakonnew and statuses_digested > 0 :
 		logging.debug( "brains.run(): locquacity_speakonnew, statuses_digested: %s" % statuses_digested )
-		tweet = queen.secrete( 130, deadline )
-
+		do_tweet = True
 	
-	if tweet is not None:
-		try:
-			# api.update_status( status=tweet )
-			# print tweet
-			logging.debug( tweet )
-		except Exception, err:
-			logging.debug( "brains.run(): error from twitter api: %s" % err )
+	if do_tweet:
+		queen = verbivorejr.VerbivoreQueen()
+		tweet = None
+		safety = 3
+		while tweet is None and safety > 0:
+			tweet = queen.secrete( 130, deadline )
+			safety = safety - 1
+		if tweet is not None:
+			post_tweet( api, tweet )
+
+	if bot_settings.locquacity_reply:
+		
+		last_replied_id = creds.last_replied_id
+		last_replied_id = None
+		mentions = api.mentions( since_id=last_replied_id )
+		
+		for mention in mentions:
+			
+			reply = "@%s" % mention.author.screen_name
+			tweet = None
+			safety = 3
+			while tweet is None and safety > 0:
+				if datetime.datetime.now() >= deadline:
+					break
+				tweet = queen.secrete_reply( mention.text, 130 - len(reply), deadline )
+				safety = safety -1
+
+			if tweet is not None:
+				reply = "%s %s" % (reply, tweet)
+				post_tweet( api, reply )
+				last_replied_id = mention.id_str
+
+		creds.last_replied_id = last_replied_id
+		creds.put()
 
 	now = datetime.datetime.now()
 	elapsed = now - then

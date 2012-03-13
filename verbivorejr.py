@@ -7,6 +7,7 @@ import random
 
 class VBWord( db.Model ):
 	word				= db.StringProperty( required=True )
+	lc_word				= db.StringProperty( required=True )
 	frequency			= db.IntegerProperty( required=True, default=0 )
 
 class VBWordForwardLink( db.Model ):
@@ -20,16 +21,21 @@ def tokenise( text ):
 	return tokens
 
 def vbword_for_word( word ):
-	db_word = memcache.get( word )
+	lc_word = word.lower()
+	db_word = memcache.get( lc_word )
 	if db_word is None:
 		db_word = VBWord.all()
-		db_word.filter( "word = ", word )
+		db_word.filter( "lc_word = ", lc_word )
 		db_word = db_word.get()
 		if db_word is None:
-			db_word = VBWord( word=word )
+			db_word = VBWord( word=word, lc_word=lc_word )
 			db_word.put()
-		memcache.set( word, db_word, 0 )
+		db_word.word = word
+		memcache.set( lc_word, db_word, 0 )
 	return db_word
+
+def word_is_special( cw ):
+	return cw[:1] == "@" or cw[:1] == "#" or cw[:7] == "http://"
 
 class VerbivoreWorker:
 	
@@ -108,31 +114,33 @@ def ucfirst( string ):
 
 class VerbivoreQueen:
 	
-	def secrete( self, length, deadline ):
-		
-		out = ""
-		done = False
-		db_word = vbword_for_word( "." )
-		
+	def candidates_for_dbword( self, db_word ):
+		q = VBWordForwardLink.all()
+		q.filter( "root_word = ", db_word )
+		q.order( "-frequency" )
+		return q.fetch( 1000 )
+
+	def secrete_from_dbword( self, db_word, length, deadline, include_dbword=False ):
+		out = None
 		if db_word is not None:
+			done = False
+			if include_dbword:
+				out = db_word.word
+			else:
+				out = ""
 			while not done:
-
-				q = VBWordForwardLink.all()
-				q.filter( "root_word = ", db_word )
-				q.order( "-frequency" )
-				candidates = q.fetch( 1000 )
-
-				random.shuffle( candidates )
-
 				next_word = None
-				for link_candidate in candidates:
-					candidate_word = link_candidate.next_word
-					cw = candidate_word.word
-					if cw[:1] == "@" or cw[:1] == "#" or cw[:7] == "http://":
-						pass
-					else:
-						next_word = candidate_word
-						break
+				candidates = self.candidates_for_dbword( db_word )
+				if candidates is not None and len( candidates ) > 0:
+					random.shuffle( candidates ) 
+					for link_candidate in candidates:
+						candidate_word = link_candidate.next_word
+						cw = candidate_word.word
+						if word_is_special( cw ):
+							pass
+						else:
+							next_word = candidate_word
+							break
 
 				if next_word is not None:
 					word = next_word.word
@@ -161,10 +169,33 @@ class VerbivoreQueen:
 				if word == ".":
 					done = True
 
-		# finish with a full stop
-		if out[-1:] != ".":
-			out += "."
+			# finish with a full stop
+			if out[-1:] != ".":
+				out += "."
 
 		return out
 
+	def secrete_reply( self, text, length, deadline):
 
+		logging.debug( "VerbivoreQueen.secrete_reply()" )
+
+		tokens = tokenise( text )
+		tokens.reverse()
+		pivot_dbword = None
+		for token in tokens:
+			logging.debug( "-> looking for matches for token: %s" % token )
+			db_word = vbword_for_word( token )
+			candidates = self.candidates_for_dbword( db_word )
+			if len( candidates ) > 0:
+				pivot_dbword = db_word
+				break
+
+		if pivot_dbword is not None:
+			logging.debug( "-> pivot_dbword is %s" % pivot_dbword.word )
+			return self.secrete_from_dbword( pivot_dbword, length, deadline, include_dbword=True )
+		else:
+			return self.secrete( length, deadline )
+
+	def secrete( self, length, deadline ):
+		db_word = vbword_for_word( "." )
+		return self.secrete_from_dbword( db_word, length, deadline )

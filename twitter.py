@@ -11,6 +11,7 @@ class MMTwitterCreds( db.Model ):
 	token_secret = db.StringProperty()	
 	screen_name = db.StringProperty()
 	owner = db.UserProperty()
+	last_replied_id = db.StringProperty()
 
 class MMTwitterUser( db.Model ):
 	screen_name = db.StringProperty()
