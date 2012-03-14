@@ -117,8 +117,9 @@ def run( creds, force_tweet=False ):
 		logging.debug( "brains.run(): locquacity_speakonnew, statuses_digested: %s" % statuses_digested )
 		do_tweet = True
 	
+	queen = verbivorejr.VerbivoreQueen()
+
 	if do_tweet:
-		queen = verbivorejr.VerbivoreQueen()
 		tweet = None
 		safety = 3
 		while tweet is None and safety > 0:
@@ -129,7 +130,7 @@ def run( creds, force_tweet=False ):
 
 	if bot_settings.locquacity_reply:
 		
-		last_replied_id = creds.last_replied_id
+		last_replied_id = creds.last_replied_id	
 		mentions = api.mentions( since_id=last_replied_id )
 		
 		for mention in mentions:
