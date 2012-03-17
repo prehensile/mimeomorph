@@ -54,24 +54,25 @@ def post_tweet( api, tweet, in_reply_to_status_id=None ):
 		except Exception, err:
 			logging.debug( "brains.run(): error from twitter api: %s" % err )
 
-def run( creds, force_tweet=False ):
+def run( creds, force_tweet=False, debug=False ):	
 
-	logging.debug( "brains.run(), force_tweet is %s" % force_tweet )
+	if not debug:
+		try:
+			debug = config.DEBUG_MODE
+		except AttributeError:
+			pass
+
+	if debug:
+		force_tweet = True
+
+	logging.debug( "brains.run(), force_tweet is %s, debug is %s" % (force_tweet, debug) )
 
 	then = datetime.datetime.now()
 	bot_settings = settings.get_settings( creds )
 
-	if force_tweet is False:
-		bot_state = state.get_state( creds )
-		lastrun = bot_state.last_run
-		if lastrun is not None:
-			nextrun = lastrun + datetime.timedelta( hours=bot_settings.tweet_frequency )
-			if nextrun > then:
-				logging.debug( "-> not due yet" )
-				return
-
-		bot_state.last_run = then
-		bot_state.put()
+	bot_state = state.get_state( creds )
+	bot_state.last_run = then
+	bot_state.put()
 
 	deadline = then + TIME_LIMIT
 	learning_style = bot_settings.learning_style
@@ -126,29 +127,41 @@ def run( creds, force_tweet=False ):
 			tweet = queen.secrete( 130, deadline )
 			safety = safety - 1
 		if tweet is not None:
-			post_tweet( api, tweet )
+			tweet = verbivorejr.uc_first( tweet )
+			if debug:
+				logging.debug( "brains.run()[DEBUG MODE]: would post: %s" % tweet )
+			else:
+				post_tweet( api, tweet )
 
 	if bot_settings.locquacity_reply:
 		
 		last_replied_id = creds.last_replied_id	
+		if debug:
+			last_replied_id = None
 		mentions = api.mentions( since_id=last_replied_id )
 		
+		my_name = "@%s" % creds.screen_name
 		for mention in mentions:
 			
-			reply = "@%s" % mention.author.screen_name
-			tweet = None
-			safety = 3
-			while tweet is None and safety > 0:
-				if datetime.datetime.now() >= deadline:
-					break
-				tweet = queen.secrete_reply( mention.text, 130 - len(reply), deadline )
-				safety = safety -1
+			# only reply when we've been directly addressed
+			if mention.text[:len(my_name)] == my_name:
 
-			if tweet is not None:
-				last_replied_id = mention.id_str
-				reply = "%s %s" % (reply, tweet)
-				post_tweet( api, reply, last_replied_id )
-				
+				reply = "@%s" % mention.author.screen_name
+				tweet = None
+				safety = 3
+				while tweet is None and safety > 0:
+					if datetime.datetime.now() >= deadline:
+						break
+					tweet = queen.secrete_reply( mention.text, 130 - len(reply), deadline )
+					safety = safety -1
+					last_replied_id = mention.id_str
+
+				if tweet is not None:
+					reply = "%s %s" % (reply, tweet)
+					if debug:
+						logging.debug( "brains.run()[DEBUG MODE]: would post: %s" % reply )
+					else:
+						post_tweet( api, reply, last_replied_id )
 
 		creds.last_replied_id = last_replied_id
 		creds.put()

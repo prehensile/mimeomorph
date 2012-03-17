@@ -28,6 +28,8 @@ import constants
 import os
 from google.appengine.api import users
 from google.appengine.api import taskqueue
+import state
+import datetime
 
 
 def get_url( request, path ):
@@ -53,15 +55,31 @@ class RunHandler( webapp.RequestHandler ):
 	def run_one( self, bot_name ):
 		creds = twitter.get_twitter_creds( bot_name )
 		force_tweet = self.request.get( "force_tweet") == "true"
-		brains.run( creds, force_tweet )
+		debug = self.request.get( "debug" ) == "true"
+		brains.run( creds, force_tweet, debug )
 
 	def run_all( self ):
-		creds = twitter.get_all_creds()
-		logging.debug( "RunHandler.run_all: queue up %d jobs" % len( creds ) )
-		for mm_twittercreds in creds:
-			url = "/%s/run" % mm_twittercreds.screen_name
-			logging.debug( "-> queue up job: %s" % url )
-			taskqueue.add( url=url )
+		then = datetime.datetime.now()
+		all_creds = twitter.get_all_creds()
+		logging.debug( "RunHandler.run_all: queue up %d jobs" % len( all_creds ) )
+		for mm_twittercreds in all_creds:
+			bot_state = state.get_state( mm_twittercreds )
+			bot_settings = settings.get_settings( mm_twittercreds )
+			lastrun = bot_state.last_run
+			do_run = False
+			if lastrun is None:
+				do_run = True
+			else:
+				nextrun = lastrun + datetime.timedelta( hours=bot_settings.tweet_frequency )
+				if nextrun > then:
+					logging.debug( "-> %s not due yet (due at %s)" % (mm_twittercreds.screen_name,nextrun) )
+				else:
+					do_run = True
+
+			if do_run:
+				url = "/%s/run" % mm_twittercreds.screen_name
+				logging.debug( "-> queue up job: %s" % url )
+				taskqueue.add( url=url )
 
 	def handle_both( self, bot_name=None ):
 		if bot_name is None:
@@ -90,41 +108,46 @@ class SettingsHandler( webapp.RequestHandler ):
 		if creds.screen_name is not None:
 			template_values[ 'twitter_username' ] = creds.screen_name
 
-		if( bot_settings is None ):
+		if bot_settings is None:
 			bot_settings = settings.get_settings( creds )
+		
+		template_path = None
+		if bot_settings is None:
+			template_path = path_for_template( "nobot.html" )
+		else :
+			template_values[ 'guru_name' ] = bot_settings.learning_guru
+			template_values[ "tweet_frequency" ] = bot_settings.tweet_frequency
+			template_values[ "tweet_chance" ] = bot_settings.tweet_chance
 
-		template_values[ 'guru_name' ] = bot_settings.learning_guru
-		template_values[ "tweet_frequency" ] = bot_settings.tweet_frequency
-		template_values[ "tweet_chance" ] = bot_settings.tweet_chance
+			try:
+				lists_in = creds.lists
+				if lists_in:
+					lists_out = []
+					for list_in in lists_in:
+						lists_out.append( { 'name' : list_in.name, 'id' : list_in.id_str } )  
+					template_values[ 'lists' ] = lists_out
+			except Exception, err:
+				pass
 
-		try:
-			lists_in = creds.lists
-			if lists_in:
-				lists_out = []
-				for list_in in lists_in:
-					lists_out.append( { 'name' : list_in.name, 'id' : list_in.id_str } )  
-				template_values[ 'lists' ] = lists_out
-		except Exception, err:
-			pass
+			if bot_settings.learning_style == constants.learning_style_oneuser:
+				template_values[ 'learnfrom_oneuser_checked' ] = "checked"
+			elif bot_settings.learning_style == constants.learning_style_followers:
+				template_values[ 'learnfrom_followers_checked' ] = "checked"
+			elif bot_settings.learning_style == constants.learning_style_following:
+				template_values[ 'learnfrom_following_checked' ] = "checked"
+			elif bot_settings.learning_style == constants.learning_style_list:
+				template_values[ 'learnfrom_list_checked' ] = "checked"
 
-		if bot_settings.learning_style == constants.learning_style_oneuser:
-			template_values[ 'learnfrom_oneuser_checked' ] = "checked"
-		elif bot_settings.learning_style == constants.learning_style_followers:
-			template_values[ 'learnfrom_followers_checked' ] = "checked"
-		elif bot_settings.learning_style == constants.learning_style_following:
-			template_values[ 'learnfrom_following_checked' ] = "checked"
-		elif bot_settings.learning_style == constants.learning_style_list:
-			template_values[ 'learnfrom_list_checked' ] = "checked"
+			if bot_settings.locquacity_onschedule: 
+				template_values[ 'locquacity_onschedule_checked' ] = "checked"
+			if bot_settings.locquacity_reply:
+				template_values[ 'locquacity_reply_checked' ] = "checked"
+			if bot_settings.locquacity_speakonnew:
+				template_values[ 'locquacity_speakonnew_checked' ] = "checked"
 
-		if bot_settings.locquacity_onschedule: 
-			template_values[ 'locquacity_onschedule_checked' ] = "checked"
-		if bot_settings.locquacity_reply:
-			template_values[ 'locquacity_reply_checked' ] = "checked"
-		if bot_settings.locquacity_speakonnew:
-			template_values[ 'locquacity_speakonnew_checked' ] = "checked"
-
-		path = path_for_template( "settings.html" )
-		self.response.out.write( template.render( path, template_values ) )
+			template_path = path_for_template( "settings.html" )
+		
+		self.response.out.write( template.render( template_path, template_values ) )
 
 	def authenticate_user( self, creds ):
 		user = users.get_current_user()
@@ -137,7 +160,7 @@ class SettingsHandler( webapp.RequestHandler ):
 			self.render_template( creds ) 
 		else:
 			path = path_for_template( "notowner.html" )
-			self.response.out.write( template.render( path, template_values ) )
+			self.response.out.write( template.render( path, {} ) )
 	
 	# form data has been posted, process it
 	def post( self, bot_name ):

@@ -15,10 +15,31 @@ class VBWordForwardLink( db.Model ):
 	next_word		 	= db.ReferenceProperty( VBWord, required=True, collection_name="following_word_set" )
 	frequency			= db.IntegerProperty( required=True, default=0 )
 
+def uc_first( string ):
+	return string[:1].upper() + string[1:]
+
 def tokenise( text ):
 	#tokens = nltk.word_tokenize( text )
 	tokens = re.findall(r"http://[^\s]+|[[\w@#&']+|[.,!?;]]", text )
 	return tokens
+
+def join_sentence( arr_words ):
+	str_out = None
+	last_word = None
+	for db_word in arr_words:
+		word = db_word.word
+		if last_word is not None and last_word == ".":
+			word = uc_first( word )
+		if str_out is None:
+			str_out = word
+		elif re.match( """[\w@#&']+""", word ):
+			str_out = "%s %s" % ( str_out, word )
+		else:
+			str_out = "%s%s" % ( str_out, word )
+		last_word = word
+	if str_out[-1:] != ".":
+		str_out = "%s." % str_out
+	return str_out
 
 def vbword_for_word( word ):
 	lc_word = word.lower()
@@ -109,28 +130,40 @@ class VerbivoreWorker:
 					db_link.frequency = forward_links[ to_word ]
 					db_link.put()
 
-def ucfirst( string ):
-	return string[:1].upper() + string[1:]
-
 class VerbivoreQueen:
 	
-	def candidates_for_dbword( self, db_word ):
+	def candidates_for_dbword( self, db_word, look_backwards=False ):
 		q = VBWordForwardLink.all()
-		q.filter( "root_word = ", db_word )
+		if look_backwards is True:
+			q.filter( "following_word = ", db_word )
+		else:
+			q.filter( "root_word = ", db_word )
 		q.order( "-frequency" )
 		return q.fetch( 1000 )
 
-	def secrete_from_dbword( self, db_word, length, deadline, include_dbword=False ):
-		out = None
+	def secrete_from_dbword( self, db_word, length, deadline, include_dbword=False, bidirectional=False ):
+		str_out = None
 		if db_word is not None:
-			done = False
+			
+			# bidirectional makes no sense if include_dbword is False
+			if not include_dbword:
+				bidirectional = False
+
 			if include_dbword:
-				out = db_word.word
+				arr_out = [ db_word ]
 			else:
-				out = ""
+				arr_out = []
+			finished_left = False
+			finished_right = False
+			done = False
+			leftmost_dbword = db_word
+			rightmost_dbword = db_word
+			next_dbword = None
 			while not done:
-				next_word = None
-				candidates = self.candidates_for_dbword( db_word )
+
+				# extend rightwards
+				next_dbword = None
+				candidates = self.candidates_for_dbword( rightmost_dbword )
 				if candidates is not None and len( candidates ) > 0:
 					random.shuffle( candidates ) 
 					for link_candidate in candidates:
@@ -138,42 +171,62 @@ class VerbivoreQueen:
 						cw = candidate_word.word
 						if word_is_special( cw ):
 							pass
+						elif candidate_word in arr_out:
+							pass
 						else:
-							next_word = candidate_word
+							next_dbword = candidate_word
 							break
-
-				if next_word is not None:
-					word = next_word.word
-					db_word = next_word
+				
+				if next_dbword is None:
+					finished_right = True
 				else:
-					db_word = vbword_for_word( "." )
-					word = "."
+					arr_out.append( next_dbword )
+					rightmost_dbword = next_dbword
 
-				if out[-1:] == ".":
-					word = ucfirst( word )
-				#else:
-				#	word = word.lower()
+				if bidirectional:
+					# extend leftwards
+					next_dbword = None
+					candidates = self.candidates_for_dbword( leftmost_dbword, look_backwards=True )
+					if candidates is not None and len( candidates ) > 0:
+						random.shuffle( candidates ) 
+						for link_candidate in candidates:
+							candidate_word = link_candidate.root_word
+							cw = candidate_word.word
+							if word_is_special( cw ):
+								pass
+							elif candidate_word in arr_out:
+								pass
+							else:
+								next_dbword = candidate_word
+								break
+					
+					if next_dbword is None:
+						finished_left = True
+					else:
+						arr_out.insert( 0, next_dbword )
+						leftmost_dbword = next_dbword
 
-				# append word to outstring
-				if( len(out) == 0 ):
-					out = ucfirst( word )
-				elif re.match( """[\w@#&']+""", word ):
-					out = "%s %s" % ( out, word )
-				else:
-					out = "%s%s" % ( out, word )
+				# check doneness
+				if bidirectional:
+					done = finished_right and finished_left
+				else: 
+					done = finished_right
 
-				if len(out) >= length:
-					done = True
-				if datetime.datetime.now() >= deadline:
-					done = True
-				if word == ".":
-					done = True
+				if not done:
+					str_out = join_sentence( arr_out )
+					if len( str_out ) >= length:
+						done = True
 
-			# finish with a full stop
-			if out[-1:] != ".":
-				out += "."
-
-		return out
+					if not done and datetime.datetime.now() >= deadline:
+						done = True
+							
+			# done, concatenate arr_out
+			if len(arr_out) > 3:
+				str_out = join_sentence( arr_out )
+			else:
+				str_out = None
+			
+		return str_out
 
 	def secrete_reply( self, text, length, deadline):
 
@@ -183,16 +236,17 @@ class VerbivoreQueen:
 		tokens.reverse()
 		pivot_dbword = None
 		for token in tokens:
-			logging.debug( "-> looking for matches for token: %s" % token )
-			db_word = vbword_for_word( token )
-			candidates = self.candidates_for_dbword( db_word )
-			if len( candidates ) > 0:
-				pivot_dbword = db_word
-				break
+			if not word_is_special( token ):
+				logging.debug( "-> looking for matches for token: %s" % token )
+				db_word = vbword_for_word( token )
+				candidates = self.candidates_for_dbword( db_word )
+				if len( candidates ) > 0:
+					pivot_dbword = db_word
+					break
 
 		if pivot_dbword is not None:
 			logging.debug( "-> pivot_dbword is %s" % pivot_dbword.word )
-			return self.secrete_from_dbword( pivot_dbword, length, deadline, include_dbword=True )
+			return self.secrete_from_dbword( pivot_dbword, length, deadline, include_dbword=True, bidirectional=True )
 		else:
 			return self.secrete( length, deadline )
 

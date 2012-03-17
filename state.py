@@ -6,9 +6,9 @@ class MMState( db.Model ):
 	last_run = db.DateTimeProperty()
 
 def get_state( creds ):
-	state = MMState.all()
-	state.filter( "creds = ", creds )
-	state = state.get()
-	if state is None:
-		state = MMState( creds=creds )
-	return state
+	q = MMState.all()
+	q.filter( "creds = ", creds )
+	bot_state = q.get()
+	if bot_state is None:
+		bot_state = MMState( creds=creds )
+	return bot_state

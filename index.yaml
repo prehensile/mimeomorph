@@ -12,6 +12,12 @@ indexes:
 
 - kind: VBWordForwardLink
   properties:
+  - name: following_word
+  - name: frequency
+    direction: desc
+
+- kind: VBWordForwardLink
+  properties:
   - name: root_word
   - name: frequency
     direction: desc
