@@ -182,6 +182,8 @@ class VerbivoreQueen:
 				else:
 					arr_out.append( next_dbword )
 					rightmost_dbword = next_dbword
+					if next_dbword.word == ".":
+						finished_right = True
 
 				if bidirectional:
 					# extend leftwards
@@ -205,6 +207,8 @@ class VerbivoreQueen:
 					else:
 						arr_out.insert( 0, next_dbword )
 						leftmost_dbword = next_dbword
+						if next_dbword.word == ".":
+							finished_left = True
 
 				# check doneness
 				if bidirectional:
@@ -235,6 +239,7 @@ class VerbivoreQueen:
 		tokens = tokenise( text )
 		tokens.reverse()
 		pivot_dbword = None
+		reply = None
 		for token in tokens:
 			if not word_is_special( token ):
 				logging.debug( "-> looking for matches for token: %s" % token )
@@ -244,11 +249,16 @@ class VerbivoreQueen:
 					pivot_dbword = db_word
 					break
 
-		if pivot_dbword is not None:
-			logging.debug( "-> pivot_dbword is %s" % pivot_dbword.word )
-			return self.secrete_from_dbword( pivot_dbword, length, deadline, include_dbword=True, bidirectional=True )
-		else:
-			return self.secrete( length, deadline )
+			if pivot_dbword is not None:
+				logging.debug( "-> pivot_dbword is %s" % pivot_dbword.word )
+				reply = self.secrete_from_dbword( pivot_dbword, length, deadline, include_dbword=True, bidirectional=True )
+			
+			if reply is not None:
+				break
+		
+		if reply is None:
+			reply = self.secrete( length, deadline )
+		return reply
 
 	def secrete( self, length, deadline ):
 		db_word = vbword_for_word( "." )
