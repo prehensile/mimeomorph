@@ -55,9 +55,11 @@ def post_tweet( api, tweet, in_reply_to_status_id=None ):
 			logging.debug( "brains.run(): error from twitter api: %s" % err )
 
 def learn_from_ids( api, guru_ids, deadline ):
+	statuses_digested = 0
 	for guru_id in guru_ids:
 			guru = twitter.get_user( id_str=guru_id )
 			statuses_digested += digest_user( api, deadline, guru )	
+	return( statuses_digested )
 
 def run( creds, force_tweet=False, debug=False ):	
 
@@ -94,10 +96,10 @@ def run( creds, force_tweet=False, debug=False ):
 		statuses_digested = digest_user( api, deadline, guru )
 	elif learning_style == constants.learning_style_following:
 		guru_ids = api.friends_ids( stringify_ids=True )
-		learn_from_ids( api, guru_ids, deadline )
+		statuses_digested = learn_from_ids( api, guru_ids, deadline )
 	elif learning_style == constants.learning_style_followers:
 		guru_ids = api.followers_ids( stringify_ids=True )
-		learn_from_ids( api, guru_ids, deadline )
+		statuses_digested = learn_from_ids( api, guru_ids, deadline )
 	
 	logging.debug( "brains.run(): digested %d new statuses" % statuses_digested )
 
