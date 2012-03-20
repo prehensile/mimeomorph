@@ -134,34 +134,34 @@ def run( creds, force_tweet=False, debug=False ):
 			safety = safety - 1
 		if tweet is not None:
 			tweet = verbivorejr.uc_first( tweet )
-			if debug:
-				logging.debug( "brains.run()[DEBUG MODE]: would post: %s" % tweet )
-			else:
+			logging.debug( "brains.run()[debug=%s] tweet is: %s" % (debug,tweet) )
+			if not debug:
 				post_tweet( api, tweet )
 
 	if bot_settings.locquacity_reply:
 		
 		last_replied_id = creds.last_replied_id	
-		if debug:
-			last_replied_id = None
+		logging.debug( "brains.run(): last_replied_id is %s" % last_replied_id )
 		mentions = api.mentions( since_id=last_replied_id )
-		
+		logging.debug( "-> %d mentions" % len(mentions) )
+
 		my_name = "@%s" % creds.screen_name
+		last_timestamp = None
 		for mention in mentions:
 			
 			# only reply when we've been directly addressed
 			#if mention.text[:len(my_name)] != my_name:
 			#	break
-
+			logging.debug( "-> reply to %s" % mention.author.screen_name )
 			reply = "@%s" % mention.author.screen_name
 			tweet = None
-			safety = 3
+			safety = 5
 			while tweet is None and safety > 0:
+				logging.debug( "--> generate reply, safety=%d" % safety )
 				if datetime.datetime.now() >= deadline:
 					break
 				tweet = queen.secrete_reply( mention.text, 130 - len(reply), deadline )
 				safety = safety -1
-				last_replied_id = mention.id_str
 
 			if tweet is not None:
 				reply = "%s %s" % (reply, tweet)
@@ -169,6 +169,11 @@ def run( creds, force_tweet=False, debug=False ):
 					logging.debug( "brains.run()[DEBUG MODE]: would post: %s" % reply )
 				else:
 					post_tweet( api, reply, last_replied_id )
+
+			this_timestamp = mention.created_at
+			if last_timestamp is None or this_timestamp > last_timestamp:
+				last_replied_id = mention.id_str
+				last_timestamp = this_timestamp
 
 		creds.last_replied_id = last_replied_id
 		creds.put()

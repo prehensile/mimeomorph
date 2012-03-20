@@ -21,3 +21,9 @@ indexes:
   - name: root_word
   - name: frequency
     direction: desc
+
+- kind: VBWordForwardLink
+  properties:
+  - name: next_word
+  - name: frequency
+    direction: desc

@@ -10,10 +10,16 @@ class VBWord( db.Model ):
 	lc_word				= db.StringProperty( required=True )
 	frequency			= db.IntegerProperty( required=True, default=0 )
 
+	def description(self):
+		return( "VBWord: %s" % self.word )
+
 class VBWordForwardLink( db.Model ):
 	root_word			= db.ReferenceProperty( VBWord, required=True, collection_name="root_reference_set" )
 	next_word		 	= db.ReferenceProperty( VBWord, required=True, collection_name="following_word_set" )
 	frequency			= db.IntegerProperty( required=True, default=0 )
+
+	def description(self):
+		return( "VBWordForwardLink: %s -> %s" % (self.root_word.word, self.next_word.word) )
 
 def uc_first( string ):
 	return string[:1].upper() + string[1:]
@@ -133,15 +139,15 @@ class VerbivoreWorker:
 class VerbivoreQueen:
 	
 	def candidates_for_dbword( self, db_word, look_backwards=False ):
-		q = VBWordForwardLink.all()
+		q = None
 		if look_backwards is True:
-			q.filter( "following_word = ", db_word )
+			q = db_word.following_word_set
 		else:
-			q.filter( "root_word = ", db_word )
+			q = db_word.root_reference_set
 		q.order( "-frequency" )
 		return q.fetch( 1000 )
 
-	def secrete_from_dbword( self, db_word, length, deadline, include_dbword=False, bidirectional=False ):
+	def secrete_from_dbword( self, db_word, length, deadline, include_dbword=False, bidirectional=False, min_length=0 ):
 		str_out = None
 		if db_word is not None:
 			
@@ -159,7 +165,10 @@ class VerbivoreQueen:
 			leftmost_dbword = db_word
 			rightmost_dbword = db_word
 			next_dbword = None
+			long_enough = False
 			while not done:
+
+				long_enough = len( arr_out ) > min_length
 
 				# extend rightwards
 				next_dbword = None
@@ -182,7 +191,7 @@ class VerbivoreQueen:
 				else:
 					arr_out.append( next_dbword )
 					rightmost_dbword = next_dbword
-					if next_dbword.word == ".":
+					if next_dbword.word == "." and long_enough:
 						finished_right = True
 
 				if bidirectional:
@@ -202,14 +211,12 @@ class VerbivoreQueen:
 								next_dbword = candidate_word
 								break
 					
-					if next_dbword is None:
+					if next_dbword is None or (next_dbword.word == "." and long_enough):
 						finished_left = True
 					else:
 						arr_out.insert( 0, next_dbword )
 						leftmost_dbword = next_dbword
-						if next_dbword.word == ".":
-							finished_left = True
-
+						
 				# check doneness
 				if bidirectional:
 					done = finished_right and finished_left
@@ -234,7 +241,7 @@ class VerbivoreQueen:
 
 	def secrete_reply( self, text, length, deadline):
 
-		logging.debug( "VerbivoreQueen.secrete_reply()" )
+		logging.debug( "VerbivoreQueen.secrete_reply(), 22:09" )
 
 		tokens = tokenise( text )
 		tokens.reverse()
@@ -242,19 +249,27 @@ class VerbivoreQueen:
 		reply = None
 		for token in tokens:
 			if not word_is_special( token ):
-				logging.debug( "-> looking for matches for token: %s" % token )
+				#logging.debug( "-> looking for matches for token: %s" % token )
 				db_word = vbword_for_word( token )
-				candidates = self.candidates_for_dbword( db_word )
-				if len( candidates ) > 0:
+				#logging.debug( "-> db_word is %s" % db_word.description() )
+				q = db_word.following_word_set
+				q.order( "-frequency" )
+				candidates = q.fetch( 10 )
+				num_candidates = len( candidates )
+
+				#logging.debug( "--> found %d candidates" %  len( candidates ) )
+				for candidate in candidates:
+					if word_is_special( candidate.root_word.word ):
+						num_candidates = num_candidates -1 
+					#logging.debug( "---> candidate: %s" % candidate.description() )
+
+				if num_candidates > 0:
 					pivot_dbword = db_word
 					break
 
-			if pivot_dbword is not None:
-				logging.debug( "-> pivot_dbword is %s" % pivot_dbword.word )
-				reply = self.secrete_from_dbword( pivot_dbword, length, deadline, include_dbword=True, bidirectional=True )
-			
-			if reply is not None:
-				break
+		if pivot_dbword is not None:
+			logging.debug( "-> pivot_dbword is %s" % pivot_dbword.word )
+			reply = self.secrete_from_dbword( pivot_dbword, length, deadline, include_dbword=True, bidirectional=True, min_length=3 )
 		
 		if reply is None:
 			reply = self.secrete( length, deadline )
