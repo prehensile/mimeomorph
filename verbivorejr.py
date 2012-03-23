@@ -26,7 +26,8 @@ def uc_first( string ):
 
 def tokenise( text ):
 	#tokens = nltk.word_tokenize( text )
-	tokens = re.findall(r"http://[^\s]+|[[\w@#&']+|[.,!?;]]", text )
+	# regex matches: URLS | smileys | words | strings of punctuation
+	tokens = re.findall(r"http://[^\s]+|[:;][\S]|[\w@#&']+|[.,!?;]+", text )
 	return tokens
 
 def join_sentence( arr_words ):
@@ -66,24 +67,29 @@ def word_is_special( cw ):
 
 class VerbivoreWorker:
 	
-	def __init__( self ):
+	def __init__( self, api, settings_in ):
 		self.words = {}
 		self.forward_links = {}
+		self.api = api
+		self.deadline = None
+		self.settings = settings_in
 
-	def digest( self, text, deadline ):
+	def digest( self, text ):
 
-		then = datetime.datetime.now()
+
+		# then = datetime.datetime.now()
 
 		tokens = tokenise( text )
-		now = datetime.datetime.now()
-		elapsed =  now - then
+		# now = datetime.datetime.now()
+		# elapsed =  now - then
 		
 		last_token = "." # assume we can start a new sentence with the first token
 		tokens.append( last_token ) # ... and the last token ends a sentence
+		first_token = True
 
 		for token in tokens:
 			
-			if( datetime.datetime.now() >= deadline ):
+			if self.deadline is not None and ( datetime.datetime.now() >= self.deadline ):
 				break
 
 			# get link frequency between this and last token
@@ -110,12 +116,102 @@ class VerbivoreWorker:
 			count += 1
 			self.words[ token ] = count
 
-			last_token = token
+			# minor hack - if we're digesting a reply, also connect the next token to "."
+			if token[:1] == "@" and first_token:
+				last_token = "."
+			else:
+				last_token = token
+			first_token = False
 
-	def put( self, deadline ):
+
+	def digest_history( self, mm_twitteruser ):
+		
+		statuses_digested = 0
+
+		max_id = mm_twitteruser.historywindow_upperidstr
+
+		logging.debug( "VerbivoreWorker.digest_history(%s)" % mm_twitteruser.description() )
+		logging.debug( "-> max id is %s" % max_id );
+
+		if max_id is not None:
+
+			num_tweets = 4 # softly softly catchee monkey
+			statuses = mm_twitteruser.fetch_timeline( self.api, num_tweets, since_id=None, max_id=max_id )
+
+			if len(statuses) < 1:
+				# no more history to digest
+				self.settings.learn_retrospectively = False
+				self.settings.put()
+			else:
+				oldest_id = None
+				oldest_date = None
+				for status in statuses:
+					if self.deadline is not None and ( datetime.datetime.now() >= self.deadline ):
+						break
+					if status.id_str != max_id: # status with max_id will already have been digested
+						self.digest( status.text )
+						status_date = status.created_at
+						if oldest_date is None or status_date < oldest_date:
+							oldest_id = status.id_str
+							oldest_date = status_date
+				if oldest_id is not None:
+					logging.debug( "-> new oldest_id=%s" % oldest_id )
+					mm_twitteruser.historywindow_upperidstr = oldest_id
+					mm_twitteruser.put()
+
+		logging.debug( "--> digested %d statuses" % statuses_digested )
+
+		return statuses_digested
+
+	def digest_user( self, mm_twitteruser ):
+	
+		last_id = mm_twitteruser.last_id
+		num_statuses = 20
+		if last_id is None:
+			# if we haven't seen this user before, get more statuses for better input
+			num_statuses = 100
+
+		lowest_id = None
+		statuses_digested = 0
+		statuses = mm_twitteruser.fetch_timeline( self.api, num_statuses, since_id=last_id )
+
+		if statuses is not None:	
+			if len(statuses) > 0:
+				for status in reversed(statuses): # reversed so we start at the oldest, in case we have to abort 
+					if self.deadline is not None and ( datetime.datetime.now() >= self.deadline ):
+						logging.debug( "VerbivoreWorker.digest_user(), hit deadline at %d statuses" % statuses_digested )
+						break
+					last_id = status.id_str
+					if lowest_id is None or ( long(last_id) < long(lowest_id) ):
+						lowest_id = last_id
+					self.digest( status.text )
+					statuses_digested += 1
+				
+				mm_twitteruser.historywindow_upperidstr = lowest_id
+				mm_twitteruser.last_id = last_id
+				mm_twitteruser.put()
+		
+		if self.settings.learn_retrospectively:
+			logging.debug( "VerbivoreWorker.digest_user(), will learn retrospectively" )
+			statuses_digested += self.digest_history( mm_twitteruser )
+
+		return statuses_digested
+
+
+	def digest_ids( self, tasty_ids ):
+		statuses_digested = 0
+		for tasty_id in tasty_ids:
+			guru = twitter.get_user( id_str=tasty_id )
+			statuses_digested += self.digest_user( guru )	
+			if self.deadline is not None and ( datetime.datetime.now() >= self.deadline ):
+				break
+		return( statuses_digested )
+
+
+	def put( self ):
 
 		for word in self.words:
-			if( datetime.datetime.now() >= deadline ):
+			if self.deadline is not None and ( datetime.datetime.now() >= self.deadline ):
 				break
 			vb_word = vbword_for_word( word )
 			vb_word.frequency = self.words[ word ]
@@ -124,7 +220,7 @@ class VerbivoreWorker:
 			if word in self.forward_links:
 				forward_links = self.forward_links[ word ]
 				for to_word in forward_links:
-					if( datetime.datetime.now() >= deadline ):
+					if( datetime.datetime.now() >= self.deadline ):
 						break
 					db_link = VBWordForwardLink.all()
 					vb_to_word = vbword_for_word( to_word )
@@ -136,8 +232,12 @@ class VerbivoreWorker:
 					db_link.frequency = forward_links[ to_word ]
 					db_link.put()
 
+
 class VerbivoreQueen:
 	
+	def __init__(self):
+		self.deadline = None
+
 	def candidates_for_dbword( self, db_word, look_backwards=False ):
 		q = None
 		if look_backwards is True:
@@ -147,7 +247,23 @@ class VerbivoreQueen:
 		q.order( "-frequency" )
 		return q.fetch( 1000 )
 
-	def secrete_from_dbword( self, db_word, length, deadline, include_dbword=False, bidirectional=False, min_length=0 ):
+	def check_candidate_dbword( self, candidate_word, arr_out ):
+		ok = False
+		cw = candidate_word.word
+		if len( arr_out ) < 1 and cw == ".":
+			pass
+		elif word_is_special( cw ):
+			pass
+		#elif candidate_word in arr_out:
+		#	pass
+		else:
+			ok = True
+		return ok
+
+	def secrete_from_dbword( self, db_word, length, include_dbword=False, bidirectional=False, min_words=0 ):
+		
+		logging.debug( "VerbivoreQueen.secrete_from_dbword(%s,%d)" % (db_word.word, length) )
+
 		str_out = None
 		if db_word is not None:
 			
@@ -168,7 +284,7 @@ class VerbivoreQueen:
 			long_enough = False
 			while not done:
 
-				long_enough = len( arr_out ) > min_length
+				long_enough = len( arr_out ) > min_words
 
 				# extend rightwards
 				next_dbword = None
@@ -177,12 +293,7 @@ class VerbivoreQueen:
 					random.shuffle( candidates ) 
 					for link_candidate in candidates:
 						candidate_word = link_candidate.next_word
-						cw = candidate_word.word
-						if word_is_special( cw ):
-							pass
-						elif candidate_word in arr_out:
-							pass
-						else:
+						if self.check_candidate_dbword( candidate_word, arr_out ):
 							next_dbword = candidate_word
 							break
 				
@@ -191,7 +302,7 @@ class VerbivoreQueen:
 				else:
 					arr_out.append( next_dbword )
 					rightmost_dbword = next_dbword
-					if next_dbword.word == "." and long_enough:
+					if next_dbword.word[-1] == "." and long_enough:
 						finished_right = True
 
 				if bidirectional:
@@ -202,16 +313,11 @@ class VerbivoreQueen:
 						random.shuffle( candidates ) 
 						for link_candidate in candidates:
 							candidate_word = link_candidate.root_word
-							cw = candidate_word.word
-							if word_is_special( cw ):
-								pass
-							elif candidate_word in arr_out:
-								pass
-							else:
+							if self.check_candidate_dbword( candidate_word, arr_out ):
 								next_dbword = candidate_word
 								break
 					
-					if next_dbword is None or (next_dbword.word == "." and long_enough):
+					if next_dbword is None or (next_dbword.word[-1] == "." and long_enough):
 						finished_left = True
 					else:
 						arr_out.insert( 0, next_dbword )
@@ -228,20 +334,20 @@ class VerbivoreQueen:
 					if len( str_out ) >= length:
 						done = True
 
-					if not done and datetime.datetime.now() >= deadline:
+					if not done and (self.deadline is not None)  and ( datetime.datetime.now() >= self.deadline ):
 						done = True
 							
 			# done, concatenate arr_out
-			if len(arr_out) > 3:
+			if len(arr_out) > 2:
 				str_out = join_sentence( arr_out )
 			else:
 				str_out = None
 			
 		return str_out
 
-	def secrete_reply( self, text, length, deadline):
+	def secrete_reply( self, text, length ):
 
-		logging.debug( "VerbivoreQueen.secrete_reply(), 22:09" )
+		logging.debug( "VerbivoreQueen.secrete_reply()" )
 
 		tokens = tokenise( text )
 		tokens.reverse()
@@ -269,12 +375,13 @@ class VerbivoreQueen:
 
 		if pivot_dbword is not None:
 			logging.debug( "-> pivot_dbword is %s" % pivot_dbword.word )
-			reply = self.secrete_from_dbword( pivot_dbword, length, deadline, include_dbword=True, bidirectional=True, min_length=3 )
+			reply = self.secrete_from_dbword( pivot_dbword, length, include_dbword=True, bidirectional=True, min_words=3 )
 		
 		if reply is None:
-			reply = self.secrete( length, deadline )
+			reply = self.secrete( length )
 		return reply
 
-	def secrete( self, length, deadline ):
+	def secrete( self, length ):
+		logging.debug( "VerbivoreQueen.secrete(%d)" % length )
 		db_word = vbword_for_word( "." )
-		return self.secrete_from_dbword( db_word, length, deadline )
+		return self.secrete_from_dbword( db_word, length )

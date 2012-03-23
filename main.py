@@ -53,6 +53,7 @@ class SessionCleanupHandler( webapp.RequestHandler ):
 class RunHandler( webapp.RequestHandler ):
 	
 	def run_one( self, bot_name ):
+		logging.debug( "RunHandler.run_one: %s", bot_name )
 		creds = twitter.get_twitter_creds( bot_name )
 		force_tweet = self.request.get( "force_tweet") == "true"
 		debug = self.request.get( "debug" ) == "true"
@@ -98,6 +99,13 @@ def path_for_template( template_name ):
 
 class SettingsHandler( webapp.RequestHandler ):
 	
+	def render_notloggedin( self ):
+		template_values = {}
+		template_values[ 'message' ] = "Sorry, you need to be logged in to a Google account to create bots."
+		template_values[ 'login_url' ] = users.create_login_url( self.request.path )
+		template_path = path_for_template( "notloggedin.html" )
+		self.response.out.write( template.render( template_path, template_values ) )	
+
 	def render_template( self, creds, bot_settings=None, values=None ):
 		
 		template_values = {}
@@ -138,12 +146,16 @@ class SettingsHandler( webapp.RequestHandler ):
 			elif bot_settings.learning_style == constants.learning_style_list:
 				template_values[ 'learnfrom_list_checked' ] = "checked"
 
+			if bot_settings.learn_retrospectively: 
+				template_values[ 'learn_retrospectively_checked' ] = "checked"
 			if bot_settings.locquacity_onschedule: 
 				template_values[ 'locquacity_onschedule_checked' ] = "checked"
 			if bot_settings.locquacity_reply:
 				template_values[ 'locquacity_reply_checked' ] = "checked"
 			if bot_settings.locquacity_speakonnew:
 				template_values[ 'locquacity_speakonnew_checked' ] = "checked"
+			if bot_settings.locquacity_greetnew:
+				template_values[ 'locquacity_greetnew_checked' ] = "checked"
 
 			template_path = path_for_template( "settings.html" )
 		
@@ -159,8 +171,7 @@ class SettingsHandler( webapp.RequestHandler ):
 		if self.authenticate_user( creds ):
 			self.render_template( creds ) 
 		else:
-			path = path_for_template( "notowner.html" )
-			self.response.out.write( template.render( path, {} ) )
+			self.render_notloggedin()
 	
 	# form data has been posted, process it
 	def post( self, bot_name ):
@@ -168,8 +179,7 @@ class SettingsHandler( webapp.RequestHandler ):
 		creds = twitter.get_twitter_creds( bot_name )
 
 		if not self.authenticate_user( creds ):
-			path = path_for_template( "notowner.html" )
-			self.response.out.write( template.render( path, template_values ) )
+			self.render_notloggedin()
 		else:
 			bot_settings = settings.get_settings( creds )
 			bot_settings.learning_style = self.request.get( 'learnfrom' )
@@ -177,6 +187,19 @@ class SettingsHandler( webapp.RequestHandler ):
 			bot_settings.locquacity_onschedule = self.request.get( 'locquacity_onschedule' ) == "true"
 			bot_settings.locquacity_reply = self.request.get( 'locquacity_reply' ) == "true"
 			bot_settings.locquacity_speakonnew = self.request.get( 'locquacity_speakonnew' ) == "true"
+			bot_settings.learn_retrospectively = self.request.get( 'learn_retrospectively' ) == "true"
+
+			gn = self.request.get( 'locquacity_greetnew' ) == "true"
+			logging.debug( 'SettingsHandler.post(): locquacity_greetnew=%s, bot_settings.locquacity_greetnew=%s' % (gn, bot_settings.locquacity_greetnew) )
+			if gn and not bot_settings.locquacity_greetnew:
+				logging.debug( '-> fetch follower ids' )
+				api = twitter.get_api( creds )
+				follower_ids = api.followers_ids()
+				logging.debug( '--> follower_ids=%s' % "|".join( follower_ids ) )
+				creds.follower_ids = follower_ids
+				creds.put()
+			bot_settings.locquacity_greetnew = gn
+			
 			tweet_frequency = self.request.get( 'tweet_frequency' )
 			if tweet_frequency is not None and len(tweet_frequency) > 0:
 				bot_settings.tweet_frequency = float( tweet_frequency )
@@ -196,9 +219,8 @@ class NewHandler( webapp.RequestHandler ):
 		user = users.get_current_user()
 
 		if user is None:
-			msg = "Sorry, you need to be logged in to a Google account to create bots.<br/>"
-			msg += "<a href=\"%s\">Sign in or register</a>." % users.create_login_url("/new")
-			template_values[ 'message' ] = msg
+			template_values[ 'login_url' ] = users.create_login_url("/new")
+			self.response.out.write( template.render( "notloggedin.html", template_values ) )
 		else:
 			redirect_url = None
 			tw_error = None
@@ -215,8 +237,7 @@ class NewHandler( webapp.RequestHandler ):
 			else:
 				template_values[ "twitter_auth" ] = redirect_url
 
-		path = path_for_template( "new.html" )
-		self.response.out.write( template.render( path, template_values ) )
+			self.response.out.write( template.render( "new.html", template_values ) )
 
 class OAuthReturnHandler( webapp.RequestHandler ):
 	def get(self):

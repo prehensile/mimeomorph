@@ -60,6 +60,8 @@
 			</fieldset>
 			<input type="radio" name="learnfrom" value="followers" onclick="onLearnRadioClicked(this);" {{learnfrom_followers_checked}}/>
 			Learn from my followers
+			<input type="checkbox" name="learn_retrospectively" value="true" {{learn_retrospectively_checked}}/>
+			Learn retrospectively
 		</fieldset>
 		<fieldset id="fieldset_locquacity">
 			<legend>Locquacity</legend>
@@ -73,6 +75,8 @@
 			</fieldset>
 			<input type="checkbox" name="locquacity_reply" value="true" {{locquacity_reply_checked}}/>
 			Reply to @mentions and direct messages
+			<input type="checkbox" name="locquacity_greetnew" value="true" {{locquacity_greetnew_checked}}/>
+			Greet new followers
 		</fieldset>
 		<input type="submit" value="Save" />
 	</form>

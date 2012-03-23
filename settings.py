@@ -10,6 +10,9 @@ class MMSettings( db.Model ):
 	locquacity_speakonnew = db.BooleanProperty( required=True, default=False )
 	tweet_frequency = db.FloatProperty( required=True, default=1.0 )
 	tweet_chance = db.FloatProperty( required=True, default=1.0 )
+	greet_new_followers = db.BooleanProperty( default=False )
+	learn_retrospectively = db.BooleanProperty( default=False )
+	locquacity_greetnew = db.BooleanProperty( default=False )
 
 def get_settings( creds ):
 	settings = MMSettings.all()

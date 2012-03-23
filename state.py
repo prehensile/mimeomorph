@@ -3,8 +3,9 @@ import twitter
 
 class MMState( db.Model ):
 	creds = db.ReferenceProperty( twitter.MMTwitterCreds )
+	last_replied_id = db.StringProperty()
 	last_run = db.DateTimeProperty()
-
+	
 def get_state( creds ):
 	q = MMState.all()
 	q.filter( "creds = ", creds )

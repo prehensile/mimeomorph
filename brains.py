@@ -10,40 +10,12 @@ from google.appengine.api import taskqueue
 from google.appengine.api import namespace_manager
 import settings
 import state
+import types
 
 
 # don't take any longer than this to process.
 TIME_LIMIT = datetime.timedelta( minutes=9 )
 
-def digest_user( api, deadline, mm_twitteruser ):
-	
-	last_id = mm_twitteruser.last_id
-	num_statuses = 20
-	if last_id is None:
-		# if we haven't seen this user before, get more statuses for better input
-		num_statuses = 100
-
-	if mm_twitteruser.id_str:
-		statuses = api.user_timeline( count=num_statuses, user_id=mm_twitteruser.id_str, since_id=last_id, include_rts=False )	
-	elif mm_twitteruser.screen_name:
-		statuses = api.user_timeline( count=num_statuses, screen_name=mm_twitteruser.screen_name, since_id=last_id, include_rts=False )	
-
-	statuses_digested = 0
-	if statuses is not None:
-		if len(statuses) > 0:
-			worker = verbivorejr.VerbivoreWorker()
-			for status in reversed(statuses): # reversed so we start at the oldest, in case we have to abort 
-				last_id = status.id_str
-				worker.digest( status.text, deadline )
-				statuses_digested = statuses_digested + 1
-				if datetime.datetime.now() >= deadline:
-					logging.debug( "brains.digest_user(), hit deadline at %d statuses" % statuses_digested )
-					break
-			worker.put( deadline )
-			mm_twitteruser.last_id = last_id
-			mm_twitteruser.put()
-	
-	return statuses_digested
 
 def post_tweet( api, tweet, in_reply_to_status_id=None ):
 	if tweet is not None:
@@ -53,13 +25,6 @@ def post_tweet( api, tweet, in_reply_to_status_id=None ):
 			# logging.debug( tweet )
 		except Exception, err:
 			logging.debug( "brains.run(): error from twitter api: %s" % err )
-
-def learn_from_ids( api, guru_ids, deadline ):
-	statuses_digested = 0
-	for guru_id in guru_ids:
-			guru = twitter.get_user( id_str=guru_id )
-			statuses_digested += digest_user( api, deadline, guru )	
-	return( statuses_digested )
 
 def run( creds, force_tweet=False, debug=False ):	
 
@@ -89,25 +54,23 @@ def run( creds, force_tweet=False, debug=False ):
 	namespace_manager.set_namespace( creds.screen_name )
 
 	logging.debug( "brains.run(): learning_style is: %s" % learning_style )
+	worker = verbivorejr.VerbivoreWorker( api, bot_settings )
+	worker.deadline = deadline
 	if learning_style == constants.learning_style_oneuser:
 		# learn from one user
 		guru_name = bot_settings.learning_guru
 		guru = twitter.get_user( screen_name=guru_name )
-		statuses_digested = digest_user( api, deadline, guru )
+		statuses_digested = worker.digest_user( guru )
 	elif learning_style == constants.learning_style_following:
 		guru_ids = api.friends_ids( stringify_ids=True )
-		statuses_digested = learn_from_ids( api, guru_ids, deadline )
+		statuses_digested = worker.digest_ids( guru_ids )
 	elif learning_style == constants.learning_style_followers:
 		guru_ids = api.followers_ids( stringify_ids=True )
-		statuses_digested = learn_from_ids( api, guru_ids, deadline )
+		statuses_digested = worker.digest_ids( guru_ids )
 	
-	logging.debug( "brains.run(): digested %d new statuses" % statuses_digested )
+	worker.put()
 
-	# check deadline
-	if datetime.datetime.now() >= deadline:
-		logging.debug( "brains.run(): aborted after put()'ing worker, deadline is looming." )
-		taskqueue.add( url="/%s/run" % api.me().screen_name )
-		return
+	logging.debug( "brains.run(): digested %d new statuses" % statuses_digested )
 
 	# only continue if chance is met
 	if bot_settings.tweet_chance < random.random() and force_tweet is False:
@@ -125,14 +88,21 @@ def run( creds, force_tweet=False, debug=False ):
 	elif bot_settings.locquacity_speakonnew and statuses_digested > 0 :
 		logging.debug( "brains.run(): locquacity_speakonnew, statuses_digested: %s" % statuses_digested )
 		do_tweet = True
+
+	# check deadline, defer tweeting if necessary
+	if datetime.datetime.now() >= deadline:
+		logging.debug( "brains.run(): aborted after put()'ing worker, deadline is looming." )
+		taskqueue.add( url="/%s/run" % api.me().screen_name )
+		return
 	
 	queen = verbivorejr.VerbivoreQueen()
+	queen.deadline = deadline
 
 	if do_tweet:
 		tweet = None
-		safety = 3
+		safety = 10
 		while tweet is None and safety > 0:
-			tweet = queen.secrete( 130, deadline )
+			tweet = queen.secrete( 130 )
 			safety = safety - 1
 		if tweet is not None:
 			tweet = verbivorejr.uc_first( tweet )
@@ -142,7 +112,7 @@ def run( creds, force_tweet=False, debug=False ):
 
 	if bot_settings.locquacity_reply:
 		
-		last_replied_id = creds.last_replied_id	
+		last_replied_id = bot_state.last_replied_id	
 		logging.debug( "brains.run(): last_replied_id is %s" % last_replied_id )
 		mentions = api.mentions( since_id=last_replied_id )
 		logging.debug( "-> %d mentions" % len(mentions) )
@@ -151,6 +121,9 @@ def run( creds, force_tweet=False, debug=False ):
 		last_timestamp = None
 		for mention in mentions:
 			
+			if datetime.datetime.now() >= deadline:
+				break
+
 			# only reply when we've been directly addressed
 			#if mention.text[:len(my_name)] != my_name:
 			#	break
@@ -162,7 +135,7 @@ def run( creds, force_tweet=False, debug=False ):
 				logging.debug( "--> generate reply, safety=%d" % safety )
 				if datetime.datetime.now() >= deadline:
 					break
-				tweet = queen.secrete_reply( mention.text, 130 - len(reply), deadline )
+				tweet = queen.secrete_reply( mention.text, 130 - len(reply) )
 				safety = safety -1
 
 			if tweet is not None:
@@ -177,7 +150,33 @@ def run( creds, force_tweet=False, debug=False ):
 				last_replied_id = mention.id_str
 				last_timestamp = this_timestamp
 
-		creds.last_replied_id = last_replied_id
+		bot_state.last_replied_id = last_replied_id
+		bot_state.put()
+
+
+	if bot_settings.locquacity_greetnew:
+
+		if datetime.datetime.now() >= deadline:
+			logging.debug( "brains.run(): aborted before greeting new followers, deadline is looming." )
+			return
+
+		new_follower_ids = None
+		stored_follower_ids = creds.follower_ids
+		api_follower_ids = api.followers_ids()
+		if stored_follower_ids is None:
+			new_follower_ids = api_follower_ids
+		else:
+			new_follower_ids = []
+			for api_follower_id in api_follower_ids:
+				if api_follower_id not in stored_follower_ids:
+					new_follower_ids.append( api_follower_id )
+
+		if new_follower_ids is not None and len(new_follower_ids) > 0:
+			logging.debug( "brains.run(): new_follower_ids: %s" % new_follower_ids )
+		else:
+			logging.debug( "brains.run(): no new followers" )
+
+		creds.follower_ids = api_follower_ids
 		creds.put()
 
 	now = datetime.datetime.now()
