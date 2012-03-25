@@ -17,14 +17,17 @@ import types
 TIME_LIMIT = datetime.timedelta( minutes=9 )
 
 
-def post_tweet( api, tweet, in_reply_to_status_id=None ):
+def post_tweet( api, tweet, in_reply_to_status_id=None, debug=False ):
 	if tweet is not None:
-		try:
-			api.update_status( status=tweet, in_reply_to_status_id=in_reply_to_status_id )
-			# print tweet
-			# logging.debug( tweet )
-		except Exception, err:
-			logging.debug( "brains.run(): error from twitter api: %s" % err )
+		if debug:
+			logging.debug( "brains.post_tweet()[DEBUG MODE]: would post: %s" % tweet )
+		else:
+			try:
+				api.update_status( status=tweet, in_reply_to_status_id=in_reply_to_status_id )
+				# print tweet
+				# logging.debug( tweet )
+			except Exception, err:
+				logging.debug( "brains.run(): error from twitter api: %s" % err )
 
 def run( creds, force_tweet=False, debug=False ):	
 
@@ -106,10 +109,9 @@ def run( creds, force_tweet=False, debug=False ):
 			safety = safety - 1
 		if tweet is not None:
 			tweet = verbivorejr.uc_first( tweet )
-			logging.debug( "brains.run()[debug=%s] tweet is: %s" % (debug,tweet) )
-			if not debug:
-				post_tweet( api, tweet )
+			post_tweet( api, tweet, debug=debug )
 
+	replied_userids = []
 	if bot_settings.locquacity_reply:
 		
 		last_replied_id = bot_state.last_replied_id	
@@ -140,10 +142,8 @@ def run( creds, force_tweet=False, debug=False ):
 
 			if tweet is not None:
 				reply = "%s %s" % (reply, tweet)
-				if debug:
-					logging.debug( "brains.run()[DEBUG MODE]: would post: %s" % reply )
-				else:
-					post_tweet( api, reply, last_replied_id )
+				post_tweet( api, reply, in_reply_to_status_id=mention.id, debug=debug )
+				replied_userids.append( mention.author.id )
 
 			this_timestamp = mention.created_at
 			if last_timestamp is None or this_timestamp > last_timestamp:
@@ -173,6 +173,16 @@ def run( creds, force_tweet=False, debug=False ):
 
 		if new_follower_ids is not None and len(new_follower_ids) > 0:
 			logging.debug( "brains.run(): new_follower_ids: %s" % new_follower_ids )
+			for new_follower_id in new_follower_ids:
+				if new_follower_id not in replied_userids:
+					tw_user = api.get_user( user_id=new_follower_id )
+					screen_name = tw_user.screen_name
+					safety = 5
+					greeting = None
+					while greeting is None and safety > 0:
+						greeting = queen.secrete_greeting( screen_name, 130 )
+					if greeting is not None:
+						post_tweet( api, greeting, debug=debug )
 		else:
 			logging.debug( "brains.run(): no new followers" )
 

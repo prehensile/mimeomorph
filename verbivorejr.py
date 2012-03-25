@@ -26,8 +26,8 @@ def uc_first( string ):
 
 def tokenise( text ):
 	#tokens = nltk.word_tokenize( text )
-	# regex matches: URLS | smileys | words | strings of punctuation
-	tokens = re.findall(r"http://[^\s]+|[:;][\S]|[\w@#&']+|[.,!?;]+", text )
+	# regex matches: HTML entities | URLS | smileys | words | strings of punctuation
+	tokens = re.findall(r"&[\S]+;|http://[^\s]+|[:;][\S]|[\w@#&']+|[.,!?;]+", text )
 	return tokens
 
 def join_sentence( arr_words ):
@@ -74,8 +74,27 @@ class VerbivoreWorker:
 		self.deadline = None
 		self.settings = settings_in
 
-	def digest( self, text ):
+	def link_tokens( self, root_token, next_token ):
+		
+		# get link frequency between this and last token
+		token_links = None
+		if root_token in self.forward_links:
+			root_token_links = self.forward_links[ root_token ]
+		else:
+			root_token_links = {}
+		
+		# increment count
+		count = 0
+		if next_token in root_token_links:
+			count = root_token_links[ next_token ]
+		count += 1
 
+		# store link
+		root_token_links[ next_token ] = count
+		self.forward_links[ root_token ]  = root_token_links
+
+
+	def digest( self, text ):
 
 		# then = datetime.datetime.now()
 
@@ -83,6 +102,8 @@ class VerbivoreWorker:
 		# now = datetime.datetime.now()
 		# elapsed =  now - then
 		
+		# logging.debug( "VerbivoreWorker.digest(): tokens are: %s" % tokens )
+
 		last_token = "." # assume we can start a new sentence with the first token
 		tokens.append( last_token ) # ... and the last token ends a sentence
 		first_token = True
@@ -92,22 +113,7 @@ class VerbivoreWorker:
 			if self.deadline is not None and ( datetime.datetime.now() >= self.deadline ):
 				break
 
-			# get link frequency between this and last token
-			token_links = None
-			if last_token in self.forward_links:
-				last_token_links = self.forward_links[ last_token ]
-			else:
-				last_token_links = {}
-			
-			# increment count
-			count = 0
-			if token in last_token_links:
-				count = last_token_links[ token ]
-			count += 1
-
-			# store link
-			last_token_links[ token ] = count
-			self.forward_links[ last_token ]  = last_token_links
+			self.link_tokens( last_token, token )
 
 			# increment frequency for this word
 			count = 0
@@ -116,12 +122,12 @@ class VerbivoreWorker:
 			count += 1
 			self.words[ token ] = count
 
-			# minor hack - if we're digesting a reply, also connect the next token to "."
-			if token[:1] == "@" and first_token:
-				last_token = "."
-			else:
-				last_token = token
+			# minor hack - if we're digesting a reply, also connect this token to "."
+			if last_token[:1] == "@" and first_token:
+				self.link_tokens( ".", token )
 			first_token = False
+
+			last_token = token
 
 
 	def digest_history( self, mm_twitteruser ):
@@ -250,6 +256,7 @@ class VerbivoreQueen:
 	def check_candidate_dbword( self, candidate_word, arr_out ):
 		ok = False
 		cw = candidate_word.word
+		logging.debug( "check_candidate_dbword: %s" % cw )
 		if len( arr_out ) < 1 and cw == ".":
 			pass
 		elif word_is_special( cw ):
@@ -385,3 +392,30 @@ class VerbivoreQueen:
 		logging.debug( "VerbivoreQueen.secrete(%d)" % length )
 		db_word = vbword_for_word( "." )
 		return self.secrete_from_dbword( db_word, length )
+
+	def secrete_greeting( self, screen_name, length ):
+		greeting = None
+		greeting_prefix = "@%s" % screen_name
+		
+		# first, try to construct a sentence starting with screen_name
+		db_word = vbword_for_word( greeting_prefix )
+		candidates = self.candidates_for_dbword( db_word )
+		if len(candidates) > 0:
+			greeting = self.secrete_from_dbword( db_word, length, include_dbword=True, bidirectional=False, min_words=3 )
+		# if we fail...
+		if greeting is None:
+			# try starting from some genric greeting words
+			generic_greetings = [ 'hello', 'hi', 'hey', 'heya', 'hola' ]
+			for generic_greeting in generic_greetings:
+				db_word = vbword_for_word( generic_greeting )
+				candidates = self.candidates_for_dbword( db_word )
+				if len(candidates) > 0:
+					greeting = self.secrete_from_dbword( db_word, length, include_dbword=True, bidirectional=False, min_words=3 )
+					if greeting is not None:
+						break
+			# if that fails, just generate anything
+			greeting = self.secrete( length - len(greeting_prefix) - 1 )
+			if greeting is not None:
+				greeting = "%s %s" % (greeting_prefix,greeting)
+		
+		return greeting

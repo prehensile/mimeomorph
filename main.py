@@ -195,7 +195,6 @@ class SettingsHandler( webapp.RequestHandler ):
 				logging.debug( '-> fetch follower ids' )
 				api = twitter.get_api( creds )
 				follower_ids = api.followers_ids()
-				logging.debug( '--> follower_ids=%s' % "|".join( follower_ids ) )
 				creds.follower_ids = follower_ids
 				creds.put()
 			bot_settings.locquacity_greetnew = gn
@@ -220,7 +219,9 @@ class NewHandler( webapp.RequestHandler ):
 
 		if user is None:
 			template_values[ 'login_url' ] = users.create_login_url("/new")
-			self.response.out.write( template.render( "notloggedin.html", template_values ) )
+			template_values[ 'message' ] = "Sorry, but you need to be logged in to create new bots."
+			template_path = path_for_template( "notloggedin.html" )
+			self.response.out.write( template.render( template_path, template_values ) )
 		else:
 			redirect_url = None
 			tw_error = None
@@ -237,7 +238,8 @@ class NewHandler( webapp.RequestHandler ):
 			else:
 				template_values[ "twitter_auth" ] = redirect_url
 
-			self.response.out.write( template.render( "new.html", template_values ) )
+			template_path = path_for_template( "new.html" )
+			self.response.out.write( template.render( template_path, template_values ) )
 
 class OAuthReturnHandler( webapp.RequestHandler ):
 	def get(self):
