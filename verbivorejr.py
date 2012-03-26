@@ -45,7 +45,7 @@ def join_sentence( arr_words ):
 		else:
 			str_out = "%s%s" % ( str_out, word )
 		last_word = word
-	if str_out[-1:] != ".":
+	if re.match( "\w", str_out[-1:] ):
 		str_out = "%s." % str_out
 	return str_out
 
