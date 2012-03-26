@@ -256,7 +256,6 @@ class VerbivoreQueen:
 	def check_candidate_dbword( self, candidate_word, arr_out ):
 		ok = False
 		cw = candidate_word.word
-		logging.debug( "check_candidate_dbword: %s" % cw )
 		if len( arr_out ) < 1 and cw == ".":
 			pass
 		elif word_is_special( cw ):
