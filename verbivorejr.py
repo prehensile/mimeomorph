@@ -269,8 +269,6 @@ class VerbivoreQueen:
 
 	def secrete_from_dbword( self, db_word, length, include_dbword=False, bidirectional=False, min_words=0 ):
 		
-		logging.debug( "VerbivoreQueen.secrete_from_dbword(%s,%d)" % (db_word.word, length) )
-
 		str_out = None
 		if db_word is not None:
 			
@@ -291,7 +289,7 @@ class VerbivoreQueen:
 			long_enough = False
 			while not done:
 
-				long_enough = len( arr_out ) > min_words
+				long_enough = ( len(arr_out) > min_words ) and ( len(str_out) > (length *0.5) )
 
 				# extend rightwards
 				next_dbword = None
@@ -353,8 +351,6 @@ class VerbivoreQueen:
 		return str_out
 
 	def secrete_reply( self, text, length ):
-
-		logging.debug( "VerbivoreQueen.secrete_reply()" )
 
 		tokens = tokenise( text )
 		tokens.reverse()
