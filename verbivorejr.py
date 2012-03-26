@@ -4,6 +4,7 @@ import re
 import logging
 import datetime
 import random
+import twitter
 
 class VBWord( db.Model ):
 	word				= db.StringProperty( required=True )
